@@ -38,6 +38,23 @@ async fn main() -> Result<()> {
     let repo_path = cli.repo.unwrap_or_else(|| PathBuf::from("."));
 
     match cli.command {
-        
+        Some(Commands::Ui) | None => {
+            let mut app = App::new(repo_path)?;
+            app.run().await?;
+        }
+        Some(Commands::Status) => {
+            let repo = git::Repository::open(&repo_path)?;
+            let status = repo.status()?;
+            println!("{}", status);
+        }
+        Some(Commands::Log { count}) => {
+            let repo = git ::Repository::open(&repo_path)?;
+            let commits = repo.get_commits(count)?;
+            for commit in commits {
+                println!("{}", commit);
+            }
+        }
     }
+
+    Ok(())
 }
