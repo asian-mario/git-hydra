@@ -1,0 +1,20 @@
+[package]
+name = "git-hydra"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ratatui = "0.29.0"
+crossterm = "0.29.0"
+
+git2 = "0.20.2"
+
+tokio = { version = "1.0", features = ["full"] }
+
+clap = { version = "4.0", features = ["derive" ]}
+
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+
+thiserror = "2.0.12"
