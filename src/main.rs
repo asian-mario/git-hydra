@@ -30,3 +30,14 @@ enum Commands {
         count: usize,
     }
 }
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    let repo_path = cli.repo.unwrap_or_else(|| PathBuf::from("."));
+
+    match cli.command {
+        
+    }
+}
