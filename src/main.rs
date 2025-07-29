@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Paerser, Subcommand};
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod app;
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
             let repo = git ::Repository::open(&repo_path)?;
             let commits = repo.get_commits(count)?;
             for commit in commits {
-                println!("{}", commit);
+                println!("{:?}", commit);
             }
         }
     }

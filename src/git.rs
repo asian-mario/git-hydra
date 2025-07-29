@@ -1,7 +1,23 @@
-use core::fmt;
-use std::{fmt::write, fs::File, intrinsics::saturating_sub, os::linux::raw::stat};
+use anyhow::{Context, Result};
+use chrono::{DateTime, Local};
+use git2::{Repository as Git2Repository, StatusOptions};
+use std::fmt;
+use std::path::Path;
 
-use git2::Status;
+/// i'm convinced theres a shadow man in vscode
+/// i did not write a lot of these lines
+/// somehow they showed up
+/// when did i ever want to use core??
+#[derive(Debug, Clone)]
+pub struct Commit {
+    pub id: String,
+    pub message: String,
+    pub author: String,
+    pub timestamp: DateTime<Local>,
+    pub parents: Vec<String>,
+}
+
+// i also somehow didn't write a commit struct, how?
 
 #[derive(Debug, Clone)]
 pub struct FileStatus {
@@ -32,9 +48,7 @@ impl fmt::Display for RepoStatus {
         if !self.staged.is_empty(){
             writeln!(f, "\nstaged changes:")?;
             for file in &self.staged {
-                for file in &self.staged {
-                    writeln!(f, " {} {}", file.status, file.path)?;
-                }
+                writeln!(f, " {} {}", file.status, file.path)?;
             }
         }
 
@@ -48,7 +62,7 @@ impl fmt::Display for RepoStatus {
         if !self.untracked.is_empty() {
             writeln!(f, "\nuntracked files:")?;
             for file in &self.untracked {
-                writeln!(f, " {} {}", file,status, file.path)?;
+                writeln!(f, " {} {}", file.status, file.path)?;
             }
         }
 
@@ -143,6 +157,8 @@ impl Repository {
             let commit = self.repo.find_commit(oid)?;
 
             let message = commit.message().unwrap_or("").to_string();
+            let author = commit.author();
+            let author_name = author.name().unwrap_or("Unknown").to_string();
 
             let timestamp = DateTime::from_timestamp(commit.time().seconds(), 0)
                 .unwrap_or_default()
