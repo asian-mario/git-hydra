@@ -97,7 +97,7 @@ impl App {
         Ok(())
     }
 
-    fn get_selected_file_path(&self) -> Option<String> {
+    pub fn get_selected_file_path(&self) -> Option<String> {
         if let Some(status) = &self.status{
             let mut all_files = Vec::new();
 

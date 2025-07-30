@@ -76,12 +76,14 @@ fn draw_status_view(f: &mut Frame, area: Rect, app: &App) {
     if let Some(status) = &app.status{
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .constraints([Constraint::Percentage(40), Constraint::Percentage(30), Constraint::Percentage(30)])
             .split(area);
 
         draw_file_changes(f, chunks[0], app, status);
 
         draw_repo_info(f, chunks[1], status);
+
+        draw_file_diff(f, chunks[2], app);
     } else {
         let loading = Paragraph::new("loading repository status...")
             .block(Block::default().borders(Borders::ALL).title("status."))
@@ -236,6 +238,57 @@ fn draw_repo_info(f: &mut Frame, area: Rect, status: &crate::git::RepoStatus){
     
     f.render_widget(paragraph, area);
 
+}
+
+fn draw_file_diff(f: &mut Frame, area: Rect, app: &App){
+    if let Some(file_path) = app.get_selected_file_path() {
+        match app.repo.get_file_diff(&file_path){
+            Ok(diff_text) => {
+                if diff_text.is_empty(){
+                    let no_diff = Paragraph::new("no changes to display.")
+                        .block(Block::default().borders(Borders::ALL).title("diff."))
+                        .style(Style::default().fg(Color::Gray));
+
+                    f.render_widget(no_diff, area);
+                } else {
+                    let lines: Vec<Line> = diff_text
+                        .lines()
+                        .map(|line| {
+                            if line.starts_with('+') && !line.starts_with("+++") {
+                                Line::from(Span::styled(line, Style::default().fg(Color::Green)))
+                            } else if line.starts_with('-') && !line.starts_with("---") {
+                                Line::from(Span::styled(line, Style::default().fg(Color::Red)))
+                            } else if line.starts_with("@@") {
+                                Line::from(Span::styled(line, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                            } else if line.starts_with("+++") || line.starts_with("---") {
+                                Line::from(Span::styled(line, Style::default().fg(Color::Yellow)))
+                            } else {
+                                Line::from(Span::styled(line, Style::default().fg(Color::White)))
+                            }
+                        })
+                        .collect();
+                        
+                    let diff_paragraph = Paragraph::new(lines)
+                        .block(Block::default().borders(Borders::ALL).title(format!("Diff: {}", file_path)))
+                        .wrap(Wrap { trim: false })
+                        .scroll((0, 0));
+                    
+                    f.render_widget(diff_paragraph, area);
+                }
+            }
+            Err(_) => {
+                let error_diff = Paragraph::new("Error loading diff")
+                    .block(Block::default().borders(Borders::ALL).title("Diff"))
+                    .style(Style::default().fg(Color::Red));
+                f.render_widget(error_diff, area);
+            }
+        }
+    } else {
+        let no_file = Paragraph::new("Select a file to view diff")
+            .block(Block::default().borders(Borders::ALL).title("Diff"))
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(no_file, area);
+    }
 }
 
 fn draw_log_view(f: &mut Frame, area: Rect, app: &App){
