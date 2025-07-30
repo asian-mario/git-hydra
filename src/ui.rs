@@ -4,7 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{
-        block::title, Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs, Wrap
+        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs, Wrap
     },
     Frame,
 };
@@ -52,7 +52,7 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App){
 
 fn draw_footer(f: &mut Frame, area: Rect) {
     let help_text = match f.area().width > 80 {
-        true => "↑/↓: navigate | 1/2/3: switch tabs | F5: refresh | q: quit",
+        true => "↑/↓: navigate | 1/2/3: switch tabs | Enter/Space: stage/unstage | F5: refresh | q: quit",
         false => "↑/↓: nav | 1/2/3: tabs | F5: refresh | q: quit",
     };
 
@@ -83,13 +83,14 @@ fn draw_status_view(f: &mut Frame, area: Rect, app: &App) {
     }
 }
 
+
 fn draw_file_changes(f: &mut Frame, area: Rect, app: &App, status: &crate::git::RepoStatus){
     let mut items = Vec::new();
     let mut current_index = 0;
 
     if !status.staged.is_empty(){
         items.push(ListItem::new(Line::from(vec![
-            Span::styled("-- staged changes --", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            Span::styled("── staged changes ──", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
         ])));
 
         for file in &status.staged {
@@ -109,7 +110,7 @@ fn draw_file_changes(f: &mut Frame, area: Rect, app: &App, status: &crate::git::
 
     if !status.unstaged.is_empty(){
         items.push(ListItem::new(Line::from(vec![
-            Span::styled("-- unstaged changes --", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            Span::styled("── unstaged changes ──", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
         ])));
 
         for file in &status.unstaged {
@@ -129,7 +130,7 @@ fn draw_file_changes(f: &mut Frame, area: Rect, app: &App, status: &crate::git::
 
     if !status.untracked.is_empty(){
         items.push(ListItem::new(Line::from(vec![
-            Span::styled("-- untracked files --", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            Span::styled("── untracked files ──", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         ])));
 
         for file in &status.untracked {
@@ -323,26 +324,39 @@ fn draw_commit_details(f: &mut Frame, area: Rect, app: &App){
 }
 
 fn draw_branches_view(f: &mut Frame, area: Rect, app: &App) {
-        let items: Vec<ListItem> = app
+    let items: Vec<ListItem> = app
         .branches
         .iter()
-        .map(|branch| {
-            let (name, style) = if branch.starts_with("origin/") {
-                (branch.clone(), Style::default().fg(Color::Cyan))
+        .enumerate()
+        .map(|(i, branch)| {
+            let is_selected = i == app.selected_file;
+            let base_style = if branch.starts_with("origin/") {
+                Style::default().fg(Color::Cyan)
             } else {
-                (format!("● {}", branch), Style::default().fg(Color::Green))
+                Style::default().fg(Color::Green)
             };
-            
+
+            let style = if is_selected {
+                base_style.bg(Color::DarkGray)
+            } else {
+                base_style
+            };
+
+            let name = if branch.starts_with("origin/") {
+                format!("remote: {}", branch)
+            } else {
+                format!("local: {}", branch)
+            };
+
             ListItem::new(Line::from(vec![
                 Span::styled(name, style),
             ]))
         })
         .collect();
-    
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("branches"))
-        .style(Style::default().fg(Color::White));
-    
-    f.render_widget(list, area);
 
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("branches (enter to checkout)"))
+        .style(Style::default().fg(Color::White));
+
+    f.render_widget(list, area);
 }

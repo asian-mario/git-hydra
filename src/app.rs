@@ -90,6 +90,28 @@ impl App {
         Ok(())
     }
 
+    fn get_selected_file_path(&self) -> Option<String> {
+        if let Some(status) = &self.status{
+            let mut all_files = Vec::new();
+
+            // staged / unstaged / untracked
+
+            for file in &status.staged {
+                all_files.push(file.path.clone());
+            }
+            for file in &status.unstaged {
+                all_files.push(file.path.clone());
+            }
+            for file in &status.untracked {
+                all_files.push(file.path.clone());
+            }
+
+            all_files.get(self.selected_file).cloned()
+        } else {
+            None
+        }
+    }
+
     fn handle_key_event(&mut self, key: KeyCode) -> Result<()> {
         match key {
             KeyCode::Char('q') => self.should_quit = true,
@@ -117,7 +139,11 @@ impl App {
                             self.selected_file -= 1;
                         }
                     }
-                    _ => {}
+                    AppMode::Branches => {
+                        if self.selected_file > 0{
+                            self.selected_file -= 1;
+                        }
+                    }
                 }
             }
             KeyCode::Down => {
@@ -135,11 +161,69 @@ impl App {
                             }
                         }
                     }
-                    _ => {}
+                    AppMode::Branches => {
+                        if self.selected_file + 1 < self.branches.len() {
+                            self.selected_file += 1;
+                        }
+                    }
                 }
             }
             KeyCode::F(5) => {
                 self.refresh_data()?;
+            }
+            KeyCode::Enter => {
+                match self.mode {
+                    AppMode::Status => {
+                        if let Some(status) = &self.status {
+                            let total_files = status.staged.len() + status.unstaged.len() + status.untracked.len();
+                            if self.selected_file < total_files {
+                                if let Some(file_path) = self.get_selected_file_path() {
+                                    if self.selected_file < status.staged.len() {
+                                        if let Err(e) = self.repo.unstage_file(&file_path){
+                                            eprintln!("failed to unstage file: {}", e);
+                                        }
+                                    } else {
+                                        if let Err(e) = self.repo.stage_file(&file_path){
+                                            eprintln!("failed to stage file: {}", e);
+                                        }
+                                    }
+                                    self.refresh_data()?;
+                                } 
+                            }
+                        }
+                    }
+                    AppMode::Branches => {
+                        if self.selected_file < self.branches.len() {
+                            let branch = &self.branches[self.selected_file];
+                            if !branch.starts_with("origin/"){
+                                if let Err(e) = self.repo.checkout_branch(branch) {
+                                    eprintln!("failed to checkout branch: {}", e);
+                                } else {
+                                    self.refresh_data()?;
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Char(' ') => {
+                if self.mode == AppMode::Status {
+                    if let Some(file_path) = self.get_selected_file_path() {
+                        if let Some(status) = &self.status {
+                            if self.selected_file < status.staged.len() {
+                                if let Err(e) = self.repo.unstage_file(&file_path) {
+                                    eprintln!("failed to unstage file: {}", e);
+                                } else {
+                                    if let Err(e) = self.repo.stage_file(&file_path) {
+                                        eprintln!("failed to stage file: {}", e);
+                                    }
+                                }
+                                self.refresh_data()?;
+                            }
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -158,7 +242,7 @@ impl App {
                 }
             }
             AppMode::Branches => {
-                self.branches = self.repo.get_branches()?
+                self.branches = self.repo.get_branches()?;
             }
         }
 
