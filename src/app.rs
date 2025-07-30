@@ -21,6 +21,7 @@ pub enum AppMode {
     Status,
     Log,
     Branches,
+    CommitDialog,
 }
 
 pub struct App {
@@ -32,6 +33,9 @@ pub struct App {
     pub branches: Vec<String>,
     pub selected_commit: usize,
     pub selected_file: usize,
+
+    pub commit_message: String,
+    pub error_message: Option<String>,
 }
 
 impl App {
@@ -47,6 +51,9 @@ impl App {
             branches: Vec::new(),
             selected_commit: 0,
             selected_file: 0,
+            
+            commit_message: String::new(),
+            error_message: None,
         })
     }
 
@@ -113,6 +120,42 @@ impl App {
     }
 
     fn handle_key_event(&mut self, key: KeyCode) -> Result<()> {
+        // clear error message on any key press -> visual oops
+        self.error_message = None;
+
+        match self.mode {
+            AppMode::CommitDialog => {
+                match key {
+                    KeyCode::Esc => {
+                        self.mode = AppMode::Status;
+                        self.commit_message.clear();
+                    }
+                    KeyCode::Enter => {
+                        if !self.commit_message.trim().is_empty() {
+                            match self.repo.commit(&self.commit_message) {
+                                Ok(_) => {
+                                    self.mode = AppMode::Status;
+                                    self.commit_message.clear();
+                                    self.refresh_data()?;
+                                }
+                                Err(e) => {
+                                    self.error_message = Some(format!("commit failed: {}", e));
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        self.commit_message.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        self.commit_message.pop();
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
         match key {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('1') => {
@@ -126,6 +169,17 @@ impl App {
             KeyCode::Char('3') => {
                 self.mode = AppMode::Branches;
                 self.refresh_data()?;
+            }
+            KeyCode::Char('c') => {
+                // Open dialog if there are staged files
+                if let Some(status) = &self.status {
+                    if !status.staged.is_empty() {
+                        self.mode = AppMode::CommitDialog;
+                        self.commit_message.clear();
+                    } else {
+                        self.error_message = Some("no staged files to commit.".to_string())
+                    }
+                }
             }
             KeyCode::Up => {
                 match self.mode {
@@ -144,6 +198,7 @@ impl App {
                             self.selected_file -= 1;
                         }
                     }
+                    _ => {}
                 }
             }
             KeyCode::Down => {
@@ -166,6 +221,8 @@ impl App {
                             self.selected_file += 1;
                         }
                     }
+
+                    _ => {}
                 }
             }
             KeyCode::F(5) => {
@@ -180,11 +237,16 @@ impl App {
                                 if let Some(file_path) = self.get_selected_file_path() {
                                     if self.selected_file < status.staged.len() {
                                         if let Err(e) = self.repo.unstage_file(&file_path){
-                                            eprintln!("failed to unstage file: {}", e);
+                                            self.error_message = Some(format!("failed to unstage: {}", e));
+                                        } else {
+                                            self.refresh_data();
                                         }
                                     } else {
                                         if let Err(e) = self.repo.stage_file(&file_path){
-                                            eprintln!("failed to stage file: {}", e);
+                                            self.error_message = Some(format!("failed to stage: {}", e));
+
+                                        } else {
+                                            self.refresh_data()?;
                                         }
                                     }
                                     self.refresh_data()?;
@@ -196,12 +258,17 @@ impl App {
                         if self.selected_file < self.branches.len() {
                             let branch = &self.branches[self.selected_file];
                             if !branch.starts_with("origin/"){
-                                if let Err(e) = self.repo.checkout_branch(branch) {
-                                    eprintln!("failed to checkout branch: {}", e);
-                                } else {
-                                    self.refresh_data()?;
+                                match self.repo.checkout_branch(branch){
+                                    Ok(_) => {
+                                        self.refresh_data()?;
+                                    }
+                                    Err(e) => {
+                                        self.error_message = Some(format!("failed to checkout: {}", e))
+                                    }
                                 }
                             }
+                        } else {
+                            self.error_message = Some("cannot checkout remote branch directly.".to_string());
                         }
                     }
                     _ => {}
@@ -216,11 +283,16 @@ impl App {
                         if let Some(file_path) = self.get_selected_file_path() {
                             if self.selected_file < status.staged.len() {
                                 if let Err(e) = self.repo.unstage_file(&file_path){
-                                    eprintln!("failed to unstage file: {}", e);
+                                    self.error_message = Some(format!("failed to unstage: {}", e));
+                                } else {
+                                    self.refresh_data();
                                 }
                             } else {
                                 if let Err(e) = self.repo.stage_file(&file_path){
-                                    eprintln!("failed to stage file: {}", e);
+                                    self.error_message = Some(format!("failed to stage: {}", e));
+
+                                } else {
+                                    self.refresh_data()?;
                                 }
                             }
                             self.refresh_data()?;
@@ -247,6 +319,9 @@ impl App {
             AppMode::Branches => {
                 self.branches = self.repo.get_branches()?;
             }
+
+            _ => {}
+
         }
 
         Ok(())

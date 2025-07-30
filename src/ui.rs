@@ -24,15 +24,23 @@ pub fn draw(f: &mut Frame, app: &App) {
         AppMode::Status => draw_status_view(f, chunks[1], app),
         AppMode::Log => draw_log_view(f, chunks[1], app),
         AppMode::Branches => draw_branches_view(f, chunks[1], app),
+
+        AppMode::CommitDialog => {
+            draw_status_view(f, chunks[1], app);
+            draw_commit_dialog(f, f.area(), app);
+        }
     }
 
+    if let Some(error) = &app.error_message {
+        draw_error_popup(f, f.area(), error);
+    }
     draw_footer(f, chunks[2]);
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App){
     let titles = vec!["status (1)", "log (2)", "branches (3)"];
     let selected = match app.mode {
-        AppMode::Status => 0,
+        AppMode::Status | AppMode::CommitDialog => 0,
         AppMode::Log => 1,
         AppMode::Branches => 2,
     };
@@ -51,9 +59,9 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App){
 }
 
 fn draw_footer(f: &mut Frame, area: Rect) {
-    let help_text = match f.area().width > 80 {
-        true => "↑/↓: navigate | 1/2/3: switch tabs | Enter/Space: stage/unstage | F5: refresh | q: quit",
-        false => "↑/↓: nav | 1/2/3: tabs | F5: refresh | q: quit",
+    let help_text = match f.area().width > 120 {
+        true => "↑/↓: navigate | 1/2/3: switch tabs | enter/space: stage/unstage | c: commit | F5: refresh | q: quit",
+        false => "↑/↓: nav | 1/2/3: tabs | F5: refresh | c: commit | q: quit",
     };
 
     let help = Paragraph::new(help_text)
@@ -323,7 +331,6 @@ fn draw_commit_details(f: &mut Frame, area: Rect, app: &App){
     }
 }
 
-// Test
 
 fn draw_branches_view(f: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = app
@@ -361,4 +368,76 @@ fn draw_branches_view(f: &mut Frame, area: Rect, app: &App) {
         .style(Style::default().fg(Color::White));
 
     f.render_widget(list, area);
+}
+
+fn draw_commit_dialog(f: &mut Frame, area: Rect, app: &App) {
+    let popup_area = centered_rect(60, 20, area);
+
+    f.render_widget(Clear, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(3), Constraint::Length(3)])
+        .split(popup_area);
+
+    let title = Paragraph::new("commit message")
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)))
+        .style(Style::default().fg(Color::White));
+    f.render_widget(title, chunks[0]);
+
+    let message = Paragraph::new(app.commit_message.as_str())
+        .block(Block::default().borders(Borders::ALL))
+        .style(Style::default().fg(Color::White).bg(Color::Black))
+        .wrap(Wrap {trim: false});
+
+    f.render_widget(message, chunks[1]);
+
+    let help = Paragraph::new("enter: commit | esc: cancel")
+        .block(Block::default().borders(Borders::ALL))
+        .style(Style::default().fg(Color::Gray));
+
+    f.render_widget(help, chunks[2]);
+
+    f.set_cursor( // i am so cba to use the new one i am sorry
+        chunks[1].x + app.commit_message.len() as u16 + 1,
+        chunks[1].y + 1,
+    );
+}
+
+fn draw_error_popup(f: &mut Frame, area: Rect, error: &str) {
+    let popup_area = centered_rect(50, 10, area);
+
+    f.render_widget(Clear, popup_area);
+
+    let error_widget = Paragraph::new(error)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("error")
+                .border_style(Style::default().fg(Color::Red))
+        )
+        .style(Style::default().fg(Color::Red))
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(error_widget, popup_area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(100 - percent_y / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage(100 - percent_y / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(100 - percent_x / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage(100 - percent_x / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
