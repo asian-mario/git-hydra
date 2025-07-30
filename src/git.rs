@@ -162,7 +162,7 @@ impl Repository {
 
             let message = commit.message().unwrap_or("").to_string();
             let author = commit.author();
-            let author_name = author.name().unwrap_or("Unknown").to_string();
+            let author_name = author.name().unwrap_or("unknown").to_string();
 
             let timestamp = DateTime::from_timestamp(commit.time().seconds(), 0)
                 .unwrap_or_default()
@@ -219,5 +219,83 @@ impl Repository {
         }
 
         Ok(branch_names)
+    }
+
+    pub fn stage_file(&self, path: &str) -> Result<()> {
+        let mut index = self.repo.index()?;
+        index.add_path(Path::new(path))?;
+        index.write()?;
+        Ok(())
+    }
+
+    pub fn unstage_file(&self, path: &str) -> Result<()> {
+        let mut index = self.repo.index()?;
+        let head = self.repo.head()?.peel_to_tree()?;
+
+        let entry = head.get_path(Path::new(path))?;
+        let mut index_entry = git2::IndexEntry{
+            ctime: git2::IndexTime::new(0, 0),
+            mtime: git2::IndexTime::new(0, 0),
+            dev: 0,
+            ino: 0,
+            mode: entry.filemode() as u32,
+            uid: 0,
+            gid: 0,
+            file_size: entry.to_object(&self.repo)?.as_blob().unwrap().size() as u32,
+            id: entry.id(),
+            flags: 0,
+            flags_extended: 0,
+            path: path.as_bytes().to_vec(),
+        };
+
+        index.add(&index_entry)?;
+        index.write()?;
+        Ok(())
+    }
+
+    pub fn commit(&self, message: &str) -> Result<git2::Oid>{
+        let signature = self.repo.signature()?;
+        let mut index = self.repo.index()?;
+        let tree_id = index.write_tree()?;
+        let tree = self.repo.find_tree(tree_id)?;
+
+        let parent_commit = match self.repo.head(){
+            Ok(head) => Some(head.peel_to_commit()?),
+            Err(_) => None,
+        };
+
+        let parents = if let Some(ref parent) = parent_commit {
+            vec![parent]
+        } else {
+            vec![]
+        };
+
+        let commit_id = self.repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )?;
+
+        Ok(commit_id)
+    }
+
+    pub fn create_branch(&self, name: &str) -> Result<()> {
+        let head = self.repo.head()?;
+        let commit = head.peel_to_commit()?;
+        self.repo.branch(name, &commit, false)?;
+
+        Ok(())
+    }
+
+    pub fn checkout_branch(&self, name: &str) -> Result<()>{
+        let ref_name = format!("refs/heads/{}", name);
+        let obj = self.repo.revparse_single(&ref_name)?;
+
+        self.repo.checkout_tree(&obj, None)?;
+        self.repo.set_head(&ref_name)?;
+        Ok(())
     }
 }

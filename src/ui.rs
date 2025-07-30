@@ -43,7 +43,7 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App){
         .style(Style::default().fg(Color::White))
         .highlight_style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         );
     
@@ -77,7 +77,7 @@ fn draw_status_view(f: &mut Frame, area: Rect, app: &App) {
     } else {
         let loading = Paragraph::new("loading repository status...")
             .block(Block::default().borders(Borders::ALL).title("status."))
-            .style(Style::default().fg(Color::Yellow));
+            .style(Style::default().fg(Color::Cyan));
 
         f.render_widget(loading, area);
     }
@@ -165,7 +165,7 @@ fn draw_repo_info(f: &mut Frame, area: Rect, status: &crate::git::RepoStatus){
 
     text.push(Line::from(vec![
         Span::styled("branch: ", Style::default().fg(Color::Gray)),
-        Span::styled(&status.branch, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(&status.branch, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
     ]));
     
     if status.ahead > 0 {
@@ -257,7 +257,7 @@ fn draw_commit_list(f: &mut Frame, area: Rect, app: &App){
             let time_str = commit.timestamp.format("%m/%d %H:%M").to_string();
             
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{} ", short_id), Style::default().fg(Color::Yellow)),
+                Span::styled(format!("{} ", short_id), Style::default().fg(Color::Cyan)),
                 Span::styled(format!("{} ", first_line), style),
                 Span::styled(format!("({})", time_str), Style::default().fg(Color::Gray)),
             ]))
@@ -277,7 +277,7 @@ fn draw_commit_details(f: &mut Frame, area: Rect, app: &App){
         
         text.push(Line::from(vec![
             Span::styled("commit: ", Style::default().fg(Color::Gray)),
-            Span::styled(&commit.id[..8], Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(&commit.id[..8], Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]));
         
         text.push(Line::from(vec![
@@ -304,7 +304,7 @@ fn draw_commit_details(f: &mut Frame, area: Rect, app: &App){
             for parent in &commit.parents {
                 text.push(Line::from(vec![
                     Span::styled("  ", Style::default()),
-                    Span::styled(&parent[..8], Style::default().fg(Color::Yellow)),
+                    Span::styled(&parent[..8], Style::default().fg(Color::Cyan)),
                 ]));
             }
         }
