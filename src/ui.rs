@@ -323,6 +323,8 @@ fn draw_commit_details(f: &mut Frame, area: Rect, app: &App){
     }
 }
 
+// Test
+
 fn draw_branches_view(f: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = app
         .branches

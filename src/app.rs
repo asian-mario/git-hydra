@@ -207,21 +207,24 @@ impl App {
                     _ => {}
                 }
             }
+            
+            // this is staged by git-hydra!
             KeyCode::Char(' ') => {
-                if self.mode == AppMode::Status {
-                    if let Some(file_path) = self.get_selected_file_path() {
-                        if let Some(status) = &self.status {
+                if let Some(status) = &self.status {
+                    let total_files = status.staged.len() + status.unstaged.len() + status.untracked.len();
+                    if self.selected_file < total_files {
+                        if let Some(file_path) = self.get_selected_file_path() {
                             if self.selected_file < status.staged.len() {
-                                if let Err(e) = self.repo.unstage_file(&file_path) {
+                                if let Err(e) = self.repo.unstage_file(&file_path){
                                     eprintln!("failed to unstage file: {}", e);
-                                } else {
-                                    if let Err(e) = self.repo.stage_file(&file_path) {
-                                        eprintln!("failed to stage file: {}", e);
-                                    }
                                 }
-                                self.refresh_data()?;
+                            } else {
+                                if let Err(e) = self.repo.stage_file(&file_path){
+                                    eprintln!("failed to stage file: {}", e);
+                                }
                             }
-                        }
+                            self.refresh_data()?;
+                        } 
                     }
                 }
             }
