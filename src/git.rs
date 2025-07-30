@@ -4,10 +4,6 @@ use git2::{Repository as Git2Repository, StatusOptions};
 use std::fmt;
 use std::path::Path;
 
-/// i'm convinced theres a shadow man in vscode
-/// i did not write a lot of these lines
-/// somehow they showed up
-/// when did i ever want to use core??
 #[derive(Debug, Clone)]
 pub struct Commit {
     pub id: String,
@@ -17,7 +13,17 @@ pub struct Commit {
     pub parents: Vec<String>,
 }
 
-// i also somehow didn't write a commit struct, how?
+impl fmt::Display for Commit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result{
+        write!(
+            f,
+            "{} {} ({})",
+            &self.id[..8],
+            self.message.lines().next().unwrap_or(""),
+            self.author
+        )
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct FileStatus {
@@ -105,7 +111,7 @@ impl Repository {
                 staged.push(FileStatus {
                     path: path.clone(),
                     status: status_char.to_string(),
-                })
+                });
             }
 
             if status.is_wt_new() {
@@ -129,9 +135,7 @@ impl Repository {
             "HEAD".to_string()
         };
 
-        //TODO: lazy rn so i'll calculate the ahead/behind counts in a bit
-        let ahead = 0;
-        let behind = 0;
+        let (ahead, behind) = self.calculate_ahead_behind()?;
 
         Ok(RepoStatus {
             branch,
@@ -178,6 +182,29 @@ impl Repository {
 
         }
         Ok(commits)
+    }
+
+    fn calculate_ahead_behind(&self) -> Result<(usize, usize)> {
+        let head = match self.repo.head(){
+            Ok(head) => head,
+            Err(_) => return Ok((0, 0)), // empty repo / head not found
+        };
+        
+        let local_oid = head.target().context("failed to get HEAD target.")?;
+
+        let branch_name = head.shorthand().unwrap_or("HEAD");
+        let upstream_name = format!("refs/remotes/origin/{}", branch_name);
+
+        let upstream_ref = match self.repo.find_reference(&upstream_name){
+            Ok(r) => r,
+            Err(_) => return Ok((0, 0))
+        };
+
+        let upstream_oid = upstream_ref.target().context("failed to get upstream target.")?;
+
+        let (ahead, behind) = self.repo.graph_ahead_behind(local_oid, upstream_oid)?;
+
+        Ok((ahead, behind))
     }
 
     pub fn get_branches(&self) -> Result<Vec<String>> {
