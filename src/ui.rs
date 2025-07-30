@@ -380,6 +380,7 @@ fn draw_commit_dialog(f: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Length(3), Constraint::Min(3), Constraint::Length(3)])
         .split(popup_area);
 
+
     let title = Paragraph::new("commit message")
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)))
         .style(Style::default().fg(Color::White));
@@ -391,7 +392,7 @@ fn draw_commit_dialog(f: &mut Frame, area: Rect, app: &App) {
         .wrap(Wrap {trim: false});
 
     f.render_widget(message, chunks[1]);
-
+    // test
     let help = Paragraph::new("enter: commit | esc: cancel")
         .block(Block::default().borders(Borders::ALL))
         .style(Style::default().fg(Color::Gray));
@@ -400,8 +401,9 @@ fn draw_commit_dialog(f: &mut Frame, area: Rect, app: &App) {
 
     f.set_cursor( // i am so cba to use the new one i am sorry
         chunks[1].x + app.commit_message.len() as u16 + 1,
-        chunks[1].y + 1,
+        chunks[1].y + 1, // i do not know how make this wrap yet
     );
+
 }
 
 fn draw_error_popup(f: &mut Frame, area: Rect, error: &str) {

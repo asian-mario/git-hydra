@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
-use git2::{Repository as Git2Repository, StatusOptions};
+use git2::{Repository as Git2Repository, DiffOptions, StatusOptions};
 use std::fmt;
 use std::path::Path;
 
@@ -297,5 +297,45 @@ impl Repository {
         self.repo.checkout_tree(&obj, None)?;
         self.repo.set_head(&ref_name)?;
         Ok(())
+    }
+
+    pub fn get_file_diff(&self, file_path: &str) -> Result<String> {
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.pathspec(file_path);
+
+        let diff = self.repo.diff_index_to_workdir(None, Some(&mut diff_opts))?;
+
+        let mut diff_text = String::new();
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            match line.origin(){
+                '+' => diff_text.push_str(&format!("+{}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                '-' => diff_text.push_str(&format!("-{}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                ' ' => diff_text.push_str(&format!(" {}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                '=' => diff_text.push_str(&format!("={}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                '>' => diff_text.push_str(&format!(">{}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                '<' => diff_text.push_str(&format!("<{}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                'F' => diff_text.push_str(&format!("F{}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                'H' => diff_text.push_str(&format!("H{}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                _ => diff_text.push_str(std::str::from_utf8(line.content()).unwrap_or("")),
+            }
+            true
+        })?;
+
+        if diff_text.is_empty(){
+            let head_tree = self.repo.head()?.peel_to_tree()?;
+            let diff = self.repo.diff_tree_to_index(Some(&head_tree), None, Some(&mut diff_opts))?;
+
+            diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+                match line.origin(){
+                    '+' => diff_text.push_str(&format!("+{}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                    '-' => diff_text.push_str(&format!("-{}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                    ' ' => diff_text.push_str(&format!(" {}", std::str::from_utf8(line.content()).unwrap_or(""))),
+                    _ => diff_text.push_str(std::str::from_utf8(line.content()).unwrap_or("")),
+                }
+                true
+            })?;
+        }
+
+        Ok(diff_text)
     }
 }
