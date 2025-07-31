@@ -268,24 +268,38 @@ fn draw_file_diff(f: &mut Frame, area: Rect, app: &App){
                         })
                         .collect();
                         
+                    let content_height = lines.len() as u16;
+                    let viewport_height = area.height.saturating_sub(2);
+                    let max_scroll = content_height.saturating_sub(viewport_height);
+
+                    let actual_scroll = app.diff_scroll.min(max_scroll);
+
+                    let title = if content_height > viewport_height {
+                        format!("diff: {} ({}%)", file_path,
+                            (actual_scroll * 100 / max_scroll.max(1)))
+                    } else {
+                        format!("diff: {}", file_path)
+                    };
+                        
                     let diff_paragraph = Paragraph::new(lines)
-                        .block(Block::default().borders(Borders::ALL).title(format!("Diff: {}", file_path)))
+                        .block(Block::default().borders(Borders::ALL).title(title))
                         .wrap(Wrap { trim: false })
-                        .scroll((0, 0));
+                        .scroll((actual_scroll, 0));
                     
                     f.render_widget(diff_paragraph, area);
                 }
             }
             Err(_) => {
-                let error_diff = Paragraph::new("Error loading diff")
-                    .block(Block::default().borders(Borders::ALL).title("Diff"))
+                let error_diff = Paragraph::new("error loading diff.")
+                    .block(Block::default().borders(Borders::ALL).title("diff"))
                     .style(Style::default().fg(Color::Red));
                 f.render_widget(error_diff, area);
             }
         }
+        
     } else {
-        let no_file = Paragraph::new("Select a file to view diff")
-            .block(Block::default().borders(Borders::ALL).title("Diff"))
+        let no_file = Paragraph::new("select a file to view diff.")
+            .block(Block::default().borders(Borders::ALL).title("diff"))
             .style(Style::default().fg(Color::Gray));
         f.render_widget(no_file, area);
     }

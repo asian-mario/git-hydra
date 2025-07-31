@@ -36,6 +36,8 @@ pub struct App {
 
     pub commit_message: String,
     pub error_message: Option<String>,
+
+    pub diff_scroll: u16,
 }
 
 impl App {
@@ -54,6 +56,8 @@ impl App {
             
             commit_message: String::new(),
             error_message: None,
+
+            diff_scroll: 0,
         })
     }
 
@@ -98,9 +102,8 @@ impl App {
     }
 
     pub fn get_selected_file_path(&self) -> Option<String> {
-        if let Some(status) = &self.status{
+        if let Some(status) = &self.status {
             let mut all_files = Vec::new();
-
             // staged / unstaged / untracked
 
             for file in &status.staged {
@@ -191,6 +194,7 @@ impl App {
                     AppMode::Status => {
                         if self.selected_file > 0 {
                             self.selected_file -= 1;
+                            self.diff_scroll = 0;
                         }
                     }
                     AppMode::Branches => {
@@ -213,6 +217,8 @@ impl App {
                             let total_files = status.staged.len() + status.unstaged.len() + status.untracked.len();
                             if self.selected_file + 1 < total_files {
                                 self.selected_file += 1;
+                                self.diff_scroll = 0;
+
                             }
                         }
                     }
@@ -277,7 +283,7 @@ impl App {
             
             // this is staged by git-hydra!
             KeyCode::Char(' ') => {
-                if let Some(status) = &self.status {
+                if let Some(status) = &self.status{
                     let total_files = status.staged.len() + status.unstaged.len() + status.untracked.len();
                     if self.selected_file < total_files {
                         if let Some(file_path) = self.get_selected_file_path() {
@@ -298,6 +304,27 @@ impl App {
                             self.refresh_data()?;
                         } 
                     }
+                }
+            }
+
+            KeyCode::PageUp => {
+                if self.mode == AppMode::Status {
+                    self.diff_scroll = self.diff_scroll.saturating_sub(10);
+                }
+            }
+            KeyCode::PageDown => {
+                if self.mode == AppMode::Status {
+                    self.diff_scroll = self.diff_scroll.saturating_add(10);
+                }
+            }
+            KeyCode::Home => {
+                if self.mode == AppMode::Status {
+                    self.diff_scroll = 0;
+                }
+            }
+            KeyCode::End => {
+                if self.mode == AppMode::Status {
+                    self.diff_scroll += 1000;
                 }
             }
             _ => {}
