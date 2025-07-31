@@ -60,8 +60,8 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App){
 
 fn draw_footer(f: &mut Frame, area: Rect) {
     let help_text = match f.area().width > 120 {
-        true => "↑/↓: navigate | 1/2/3: switch tabs | enter/space: stage/unstage | c: commit | F5: refresh | q: quit",
-        false => "↑/↓: nav | 1/2/3: tabs | F5: refresh | c: commit | q: quit",
+        true => "↑/↓: navigate | 1/2/3: switch tabs | enter/space: stage/unstage | c: commit | pgup/down: scroll diff view | F5: refresh | q: quit",
+        false => "↑/↓: nav | 1/2/3: tabs | F5: refresh | c: commit | pgup/down: scroll diff | q: quit",
     };
 
     let help = Paragraph::new(help_text)

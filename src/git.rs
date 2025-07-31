@@ -338,4 +338,43 @@ impl Repository {
 
         Ok(diff_text)
     }
+
+    pub fn stash_save(&mut self, message: Option<&str>) -> Result<git2::Oid> {
+        let signature = self.repo.signature()?;
+        let default_msg = "WIP on branch";
+        let stash_msg = message.unwrap_or(default_msg);
+        
+        let stash_id = self.repo.stash_save(&signature, stash_msg, Some(git2::StashFlags::DEFAULT))?;
+
+        Ok(stash_id)
+    }
+
+    pub fn stash_pop(&mut self) -> Result<()>{
+        let mut checkout_opts = git2::build::CheckoutBuilder::new();
+        checkout_opts.allow_conflicts(true);
+        checkout_opts.conflict_style_merge(true);
+
+        let mut stash_apply_opts = git2::StashApplyOptions::new();
+        stash_apply_opts.checkout_options(checkout_opts);
+
+        self.repo.stash_pop(0, Some(&mut stash_apply_opts))?;
+        Ok(())
+    }
+
+    pub fn stash_list(&mut self) -> Result<Vec<String>> {
+        let mut stashes = Vec::new();
+
+        self.repo.stash_foreach(|index, message, _oid| {
+            stashes.push(format!("stash@{{{}}}: {}", index, message));
+            true
+        })?;
+
+        Ok(stashes)
+    }
+
+    pub fn stash_drop(&mut self, index: usize) -> Result<()> {
+        self.repo.stash_drop(index)?;
+        Ok(())
+    }
+
 }

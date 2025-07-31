@@ -22,6 +22,9 @@ pub enum AppMode {
     Log,
     Branches,
     CommitDialog,
+    CreateBranchDialog,
+    StashDialog,
+    StashList,
 }
 
 pub struct App {
@@ -38,6 +41,11 @@ pub struct App {
     pub error_message: Option<String>,
 
     pub diff_scroll: u16,
+
+    pub branch_name: String,
+    pub stash_message: String,
+    pub stashes: Vec<String>,
+    pub selected_stash: usize,
 }
 
 impl App {
@@ -58,6 +66,11 @@ impl App {
             error_message: None,
 
             diff_scroll: 0,
+
+            branch_name: String::new(),
+            stash_message: String::new(),
+            stashes: Vec::new(),
+            selected_stash: 0,
         })
     }
 
@@ -152,6 +165,122 @@ impl App {
                     }
                     KeyCode::Backspace => {
                         self.commit_message.pop();
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+            AppMode::CreateBranchDialog => {
+                match key {
+                    KeyCode::Esc => {
+                        self.mode = AppMode::Branches;
+                        self.branch_name.clear()
+                    }
+                    KeyCode::Enter => {
+                        if !self.branch_name.trim().is_empty() {
+                            match self.repo.create_branch(&self.branch_name) {
+                                Ok(_) => {
+                                    self.mode = AppMode::Branches;
+                                    self.branch_name.clear();
+                                    self.refresh_data()?;
+                                }
+                                Err(e) => {
+                                    self.error_message = Some(format!("failed to create branch: {}", e));
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        self.branch_name.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        self.branch_name.pop();
+                    }
+
+                    _ => {}
+                }
+                return Ok(());
+            }
+            AppMode::StashDialog => {
+                match key {
+                    KeyCode::Esc => {
+                        self.mode = AppMode::Status;
+                        self.stash_message.clear();
+                    }
+                    KeyCode::Enter => {
+                        let msg = if self.stash_message.trim().is_empty(){
+                            None
+                        } else {
+                            Some(self.stash_message.as_str())
+                        };
+
+                        match self.repo.stash_save(msg){
+                            Ok(_) => {
+                                self.mode = AppMode::Status;
+                                self.stash_message.clear();
+                                self.refresh_data();
+                            }
+                            Err(e) => {
+                                self.error_message = Some(format!("failed to stash: {}", e));
+                            }
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        self.stash_message.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        self.stash_message.pop();
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+            AppMode::StashList => {
+                match key {
+                    KeyCode::Esc => {
+                        self.mode = AppMode::Status;
+                        return Ok(());
+                    }
+                    KeyCode::Up => {
+                        if self.selected_stash > 0 {
+                            self.selected_stash -= 1;
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Down => {
+                        if self.selected_stash + 1 < self.stashes.len() {
+                            self.selected_stash += 1;
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Enter => {
+                        // i am tweakign this is so goddamn repetetive to write everything again and again
+                        match self.repo.stash_pop() {
+                            Ok(_) => {
+                                self.mode = AppMode::Status;
+                                self.refresh_data()?;
+                            }
+                            Err(e) => {
+                                self.error_message = Some(format!("failed to pop stash: {}", e));
+                            }
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Delete => {
+                        if self.selected_stash < self.stashes.len() {
+                            match self.repo.stash_drop(self.selected_stash) {
+                                Ok(_) => {
+                                    self.refresh_data()?;
+                                    if self.selected_stash >= self.stashes.len() && !self.stashes.is_empty() {
+                                        self.selected_stash = self.stashes.len() -1;
+                                    }
+                                }
+                                Err(e) => {
+                                    self.error_message = Some(format!("failed to drop stash: {}", e));
+                                }
+                            }
+                        }
+                        return Ok(());
                     }
                     _ => {}
                 }
