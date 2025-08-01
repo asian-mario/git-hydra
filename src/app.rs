@@ -25,6 +25,7 @@ pub enum AppMode {
     CreateBranchDialog,
     StashDialog,
     StashList,
+    RemoteOperations,
 }
 
 pub struct App {
@@ -46,6 +47,13 @@ pub struct App {
     pub stash_message: String,
     pub stashes: Vec<String>,
     pub selected_stash: usize,
+
+    // remote stuff
+    pub remotes: Vec<String>,
+    pub selected_remote: usize,
+    pub current_branch: String,
+    pub is_pushing: bool,
+    pub is_pulling: bool,
 }
 
 impl App {
@@ -71,6 +79,12 @@ impl App {
             stash_message: String::new(),
             stashes: Vec::new(),
             selected_stash: 0,
+
+            remotes: Vec::new(),
+            selected_remote: 0,
+            current_branch: String::new(),
+            is_pushing: false,
+            is_pulling: false,
         })
     }
 
@@ -133,6 +147,42 @@ impl App {
         } else {
             None
         }
+    }
+
+    fn push_current_branch(&mut self) -> Result<()> {
+        if self.selected_remote < self.remotes.len() {
+            let remote_name = &self.remotes[self.selected_remote];
+            self.is_pushing = true;
+
+            match self.repo.push_to_remote(remote_name, &self.current_branch) {
+                Ok(_) => {
+                    self.refresh_data()?;
+                }
+                Err(e) => {
+                    self.error_message = Some(format!("push failed: {}", e));
+                }
+            }
+            self.is_pushing = false;
+        }
+        Ok(())
+    }
+
+    fn pull_current_branch(&mut self) -> Result<()> {
+        if self.selected_remote < self.remotes.len() {
+            let remote_name = &self.remotes[self.selected_remote];
+            self.is_pulling = true;
+
+            match self.repo.pull_from_remote(remote_name, &self.current_branch) {
+                Ok(_) => {
+                    self.refresh_data()?;
+                }
+                Err(e) => {
+                    self.error_message = Some(format!("pull failed: {}", e));
+                }
+            }
+            self.is_pulling = false;
+        }
+        Ok(())
     }
 
     fn handle_key_event(&mut self, key: KeyCode) -> Result<()> {
@@ -299,6 +349,23 @@ impl App {
                 }
                 return Ok(());
             }
+            AppMode::RemoteOperations => {
+                match key {
+                    KeyCode::Up => {
+                        if self.selected_remote > 0{
+                            self.selected_remote -= 1;
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Down => {
+                        if self.selected_remote + 1 < self.remotes.len() {
+                            self.selected_remote += 1;
+                        }
+                        return Ok(())
+                    }
+                    _ => {}
+                }
+            }
             _ => {}
         }
         match key {
@@ -318,6 +385,20 @@ impl App {
             KeyCode::Char('4') => {
                 self.mode = AppMode::StashList;
                 self.refresh_data()?;
+            }
+            KeyCode::Char('5') => {
+                self.mode = AppMode::RemoteOperations;
+                self.refresh_data()?;
+            }
+            KeyCode::Char('p') => {
+                if self.mode == AppMode::RemoteOperations && !self.remotes.is_empty() {
+                    self.push_current_branch()?;
+                }
+            }
+            KeyCode::Char('u') => {
+                if self.mode == AppMode::RemoteOperations && !self.remotes.is_empty() {
+                    self.pull_current_branch()?;
+                }
             }
             KeyCode::Char('s') => {
                 self.mode = AppMode::StashDialog;
@@ -508,6 +589,13 @@ impl App {
                     self.selected_stash = self.stashes.len().saturating_sub(1);
                 }
 
+            }
+            AppMode::RemoteOperations => {
+                self.remotes = self.repo.get_remotes()?;
+                self.current_branch = self.repo.get_current_branch()?;
+                if self.selected_remote >= self.remotes.len() {
+                    self.selected_remote = self.remotes.len().saturating_sub(1);
+                }
             }
             _ => {}
         }

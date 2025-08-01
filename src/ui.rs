@@ -38,6 +38,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             draw_status_view(f, chunks[1], app);
             draw_stash_dialog(f, f.size(), app);
         }
+        AppMode::RemoteOperations => draw_remote_view(f, chunks[1], app),
     }
 
     if let Some(error) = &app.error_message {
@@ -47,13 +48,13 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App){
-    let titles = vec!["status (1)", "log (2)", "branches (3)", "stashes (4)"];
+    let titles = vec!["status (1)", "log (2)", "branches (3)", "stashes (4)", "remote (5)"];
     let selected = match app.mode {
         AppMode::Status | AppMode::CommitDialog | AppMode::StashDialog => 0,
         AppMode::Log => 1,
         AppMode::Branches | AppMode::CreateBranchDialog => 2,
         AppMode::StashList => 3,
-        
+        AppMode::RemoteOperations => 4,
     };
 
     let tabs = Tabs::new(titles)
@@ -614,4 +615,101 @@ fn draw_stash_dialog(f: &mut Frame, area: Rect, app: &App) {
         chunks[1].x + app.stash_message.len() as u16 + 1,
         chunks[1].y + 1,
     );
+}
+
+fn draw_remote_view(f: &mut Frame, area: Rect, app: &App){
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
+    
+    draw_remote_list(f, chunks[0], app);
+    
+    draw_remote_operations(f, chunks[1], app);
+}
+
+fn draw_remote_list(f: &mut Frame, area: Rect, app: &App){
+    let items: Vec<ListItem> = app
+        .remotes
+        .iter()
+        .enumerate()
+        .map(|(i, remote)| {
+            let style = if i == app.selected_remote {
+                Style::default().bg(Color::DarkGray).fg(Color::White)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("remote: {}", remote), style),
+            ]))
+        })
+        .collect();
+    
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("remotes"))
+        .style(Style::default().fg(Color::White));
+    
+    f.render_widget(list, area);
+}
+
+fn draw_remote_operations(f: &mut Frame, area: Rect, app: &App) {
+    let mut text = Vec::new();
+    
+    text.push(Line::from(vec![
+        Span::styled("current Branch: ", Style::default().fg(Color::Gray)),
+        Span::styled(&app.current_branch, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+    ]));
+    
+    text.push(Line::from(""));
+    
+    if !app.remotes.is_empty() && app.selected_remote < app.remotes.len(){
+        let selected_remote = &app.remotes[app.selected_remote];
+        text.push(Line::from(vec![
+            Span::styled("selected remote: ", Style::default().fg(Color::Gray)),
+            Span::styled(selected_remote, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]));
+        
+        if let Ok(Some(url)) = app.repo.get_remote_url(selected_remote) {
+            text.push(Line::from(vec![
+                Span::styled("URL: ", Style::default().fg(Color::Gray)),
+                Span::styled(url, Style::default().fg(Color::Blue)),
+            ]));
+        }
+        
+        text.push(Line::from(""));
+
+        if app.is_pushing {
+            text.push(Line::from(vec![
+                Span::styled("pushing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            ]));
+        } else if app.is_pulling {
+            text.push(Line::from(vec![
+                Span::styled("pulling...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            ]));
+        } else {
+            text.push(Line::from(vec![
+                Span::styled("operations:", Style::default().fg(Color::Gray)),
+            ]));
+            text.push(Line::from(vec![
+                Span::styled("  p - Push to remote", Style::default().fg(Color::Green)),
+            ]));
+            text.push(Line::from(vec![
+                Span::styled("  u - Pull from remote", Style::default().fg(Color::Blue)),
+            ]));
+        }
+    } else {
+        text.push(Line::from(vec![
+            Span::styled("No remotes configured", Style::default().fg(Color::Red)),
+        ]));
+        text.push(Line::from(vec![
+            Span::styled("use 'git remote add origin <url>' to add a remote", Style::default().fg(Color::Gray)),
+        ]));
+    }
+    
+    let paragraph = Paragraph::new(text)
+        .block(Block::default().borders(Borders::ALL).title("remote operations."))
+        .wrap(Wrap { trim: true });
+    
+    f.render_widget(paragraph, area);
 }
