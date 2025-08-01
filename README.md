@@ -18,3 +18,14 @@ wget https://github.com/asian-mario/git-hydra/releases/download/[VERSION]/git-hy
 tar -xzf git-hydra-linux-x86_64.tar.gz
 sudo mv b-top /usr/local/bin/
 ```
+
+### how do i run it?
+
+#### tui
+```
+# run this in your current directory
+git-hydra
+
+# or specify a repo path
+git-hydra --repo /path/to/repo
+```
