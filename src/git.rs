@@ -423,6 +423,7 @@ impl Repository {
         remote.push(&[&refspec], Some(&mut push_options))?;
 
         println!("\npush completed successfully!");
+        io::stdout().flush().unwrap(); 
         Ok(())
     }
 
@@ -509,6 +510,7 @@ impl Repository {
             println!("\nno merge possible");
             return Err(anyhow::anyhow!("cannot merge - conflicting changes"));
         }
+        io::stdout().flush().unwrap(); 
         
         Ok(())
     }
