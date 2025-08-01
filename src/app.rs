@@ -237,6 +237,19 @@ impl App {
             }
             AppMode::StashList => {
                 match key {
+                    KeyCode::Char('q') => self.should_quit = true,
+                    KeyCode::Char('1') => {
+                        self.mode = AppMode::Status;
+                        self.refresh_data()?;
+                    }
+                    KeyCode::Char('2') => {
+                        self.mode = AppMode::Log;
+                        self.refresh_data()?;
+                    }
+                    KeyCode::Char('3') => {
+                        self.mode = AppMode::Branches;
+                        self.refresh_data()?;
+                    }
                     KeyCode::Esc => {
                         self.mode = AppMode::Status;
                         return Ok(());
@@ -490,22 +503,14 @@ impl App {
                 self.branches = self.repo.get_branches()?;
             }
             AppMode::StashList => {
-                eprint!("DEBUG: REFRESHING STASHES...");
                 self.stashes = self.repo.stash_list()?;
-                eprint!("DEBUG: GOT {} STASHES", self.stashes.len());
                 if self.selected_stash >= self.stashes.len() {
                     self.selected_stash = self.stashes.len().saturating_sub(1);
                 }
 
-                eprint!("DEBUG: STASHES REFRESHED, SELECTED_STASH: {}", self.selected_stash);
-
             }
-            _ => {
-                eprintln!("DEBUG: NO REFRESH NEEDED FOR MODE: {:?}", self.mode)
-            }
-
+            _ => {}
         }
-
         Ok(())
     }
 }
