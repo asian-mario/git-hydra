@@ -1,6 +1,12 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use std::{thread, time::Duration};
+use crossterm::{
+    execute,
+    terminal::{Clear, ClearType},
+};
+use std::io::{self};
 
 mod app;
 mod git;
@@ -33,6 +39,26 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    execute!(io::stdout(), Clear(ClearType::All))?;
+    print!(r"
+                
+                $$\   $$\           $$\                       $$\                    
+                \__|  $$ |          $$ |                      $$ |                   
+        $$$$$$\  $$\ $$$$$$\         $$$$$$$\  $$\   $$\  $$$$$$$ | $$$$$$\  $$$$$$\  
+        $$  __$$\ $$ |\_$$  _|$$$$$$\ $$  __$$\ $$ |  $$ |$$  __$$ |$$  __$$\ \____$$\ 
+        $$ /  $$ |$$ |  $$ |  \______|$$ |  $$ |$$ |  $$ |$$ /  $$ |$$ |  \__|$$$$$$$ |
+        $$ |  $$ |$$ |  $$ |$$\       $$ |  $$ |$$ |  $$ |$$ |  $$ |$$ |     $$  __$$ |
+        \$$$$$$$ |$$ |  \$$$$  |      $$ |  $$ |\$$$$$$$ |\$$$$$$$ |$$ |     \$$$$$$$ |
+        \____$$ |\__|   \____/       \__|  \__| \____$$ | \_______|\__|      \_______|
+        $$\   $$ |                              $$\   $$ |                             
+        \$$$$$$  |                              \$$$$$$  |                             
+        \______/                                \______/                              
+
+            ");
+
+    thread::sleep(Duration::from_millis(2000)); 
+    execute!(io::stdout(), Clear(ClearType::All))?;
+    
     let cli = Cli::parse();
 
     let repo_path = cli.repo.unwrap_or_else(|| PathBuf::from("."));
