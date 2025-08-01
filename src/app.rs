@@ -237,6 +237,7 @@ impl App {
             }
             AppMode::StashList => {
                 match key {
+                    //idiot forgot to add key handling
                     KeyCode::Char('q') => self.should_quit = true,
                     KeyCode::Char('1') => {
                         self.mode = AppMode::Status;
@@ -267,7 +268,6 @@ impl App {
                         return Ok(());
                     }
                     KeyCode::Enter => {
-                        // i am tweakign this is so goddamn repetetive to write everything again and again
                         match self.repo.stash_pop() {
                             Ok(_) => {
                                 self.mode = AppMode::Status;

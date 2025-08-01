@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
-use git2::{Repository as Git2Repository, DiffOptions, StatusOptions};
+use git2::{Repository as Git2Repository, DiffOptions, StatusOptions, PushOptions, RemoteCallbacks, Cred, Progress};
+use std::io::{self, Write};
 use std::fmt;
 use std::path::Path;
 
@@ -361,8 +362,6 @@ impl Repository {
         Ok(())
     }
 
-    // is git2 stash_foreach bugged? it doesnt seem to work at ALL
-    // why does it fkn freeze here 
     pub fn stash_list(&mut self) -> Result<Vec<String>> {
         let mut stashes = Vec::new();
 
@@ -379,4 +378,140 @@ impl Repository {
         Ok(())
     }
 
+    // gaahhhhh
+    pub fn push_to_remote(&mut self, remote_name: &str, branch_name: &str) -> Result<()> {
+        let mut remote = self.repo.find_remote(remote_name)?;
+
+        let mut callbacks = RemoteCallbacks::new();
+
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            if let Ok(cred) = Cred::ssh_key_from_agent(username_from_url.unwrap_or("git")){
+                return Ok(cred);
+            }
+
+            if let Ok(cred) = Cred::ssh_key(
+                username_from_url.unwrap_or("git"),
+                None,
+                std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap_or_default())),
+                None,
+            ) {
+                return Ok(cred)
+            }
+
+            Cred::userpass_plaintext("", "")
+        });
+
+        callbacks.push_transfer_progress(|current, total, bytes| {
+            print!("\rpushing... {}/{} objects ({} bytes)", current, total, bytes);
+            io::stdout().flush().unwrap();
+        });
+
+        let mut push_options = PushOptions::new();
+        push_options.remote_callbacks(callbacks);
+
+        let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
+        remote.push(&[&refspec], Some(&mut push_options))?;
+
+        println!("\npush completed successfully!");
+        Ok(())
+    }
+
+    pub fn pull_from_remote(&mut self, remote_name: &str, branch_name: &str) -> Result<()> {
+        let mut remote = self.repo.find_remote(remote_name)?;
+
+        let mut callbacks = RemoteCallbacks::new();
+
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            if let Ok(cred) = Cred::ssh_key_from_agent(username_from_url.unwrap_or("git")){
+                return Ok(cred);
+            }
+
+            if let Ok(cred) = Cred::ssh_key(
+                username_from_url.unwrap_or("git"),
+                None,
+                std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap_or_default())),
+                None,
+            ) {
+                return Ok(cred)
+            }
+
+            Cred::userpass_plaintext("", "")
+        });
+
+        callbacks.transfer_progress(|stats| {
+            if stats.received_objects() == stats.total_objects(){
+                print!("resolving deltas {}/{} \r", stats.indexed_deltas(), stats.total_deltas());
+            } else if stats.total_objects() > 0 {
+                (100 * stats.received_objects() / stats.total_objects(),
+                stats.received_objects(),
+                stats.total_objects(),
+                stats.received_bytes());
+            }
+            io::stdout().flush().unwrap();
+            true
+        });
+
+        let mut fetch_options = git2::FetchOptions::new();
+        fetch_options.remote_callbacks(callbacks);
+
+        let refspec = format!("+refs/heads/{}:refs/remotes/{}/{}", branch_name, remote_name, branch_name);
+        remote.fetch(&[&refspec], Some(&mut fetch_options), None)?;
+
+        let remote_branch_name = format!("refs/remotes/{}/{}", remote_name, branch_name);
+        let remote_ref = self.repo.find_reference(&remote_branch_name)?;
+        let remote_oid = remote_ref.target().context("failed to get remote OID")?;
+        let remote_commit = self.repo.find_commit(remote_oid)?;
+        let remote_annotated = self.repo.find_annotated_commit(remote_oid)?;
+        let annotated_commits = vec![&remote_annotated];
+        
+        let head = self.repo.head()?;
+        let local_oid = head.target().context("failed to get local OID")?;
+        
+        let analysis = self.repo.merge_analysis(&annotated_commits)?;
+        
+        if analysis.0.is_fast_forward() {
+            let mut reference = self.repo.find_reference("HEAD")?;
+            reference.set_target(remote_oid, "Fast-forward")?;
+            self.repo.set_head("HEAD")?;
+            self.repo.checkout_head(Some(
+                git2::build::CheckoutBuilder::default()
+                    .allow_conflicts(true)
+                    .conflict_style_merge(true)
+                    .force()
+            ))?;
+            println!("\nfast-forward merge completed!");
+        } else if analysis.0.is_normal() {
+            // Need to do a real merge
+            println!("\nmerge required - complex operation in WIP");
+            return Err(anyhow::anyhow!("manual merge required / please use git command line"));
+        } else if analysis.0.is_up_to_date() {
+            println!("\nalready up to date!");
+        } else {
+            println!("\nno merge possible");
+            return Err(anyhow::anyhow!("cannot merge - conflicting changes"));
+        }
+        
+        Ok(())
+    }
+
+    pub fn get_remotes(&self) -> Result<Vec<String>>{
+        let remotes = self.repo.remotes()?;
+        Ok(remotes.iter()
+            .filter_map(|r| r.map(|s| s.to_string()))
+            .collect())
+    }
+
+    pub fn get_remote_url(&self, remote_name: &str) -> Result<Option<String>>{
+        let remote = self.repo.find_remote(remote_name)?;
+        Ok(remote.url().map(|s| s.to_string()))
+    }
+
+    pub fn get_current_branch(&self) -> Result<String>{
+        let head = self.repo.head()?;
+        if let Some(name) = head.shorthand(){
+            Ok(name.to_string())
+        } else {
+            Ok("HEAD".to_string())
+        }
+    }
 }
