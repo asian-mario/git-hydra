@@ -406,6 +406,7 @@ impl Repository {
             io::stdout().flush().unwrap();
         });
 
+        
         let mut push_options = PushOptions::new();
         push_options.remote_callbacks(callbacks);
 
