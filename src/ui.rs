@@ -1,6 +1,6 @@
 use ratatui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{self, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{
@@ -24,10 +24,19 @@ pub fn draw(f: &mut Frame, app: &App) {
         AppMode::Status => draw_status_view(f, chunks[1], app),
         AppMode::Log => draw_log_view(f, chunks[1], app),
         AppMode::Branches => draw_branches_view(f, chunks[1], app),
+        AppMode::StashList => draw_stash_view(f, chunks[1], app),
 
         AppMode::CommitDialog => {
             draw_status_view(f, chunks[1], app);
             draw_commit_dialog(f, f.area(), app);
+        }
+        AppMode::CreateBranchDialog => {
+            draw_branches_view(f, chunks[1], app);
+            draw_create_branch_dialog(f, f.area(), app);
+        }
+        AppMode::StashDialog => {
+            draw_status_view(f, chunks[1], app);
+            draw_stash_dialog(f, f.size(), app);
         }
     }
 
@@ -38,11 +47,13 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App){
-    let titles = vec!["status (1)", "log (2)", "branches (3)"];
+    let titles = vec!["status (1)", "log (2)", "branches (3)", "stashes (4)"];
     let selected = match app.mode {
-        AppMode::Status | AppMode::CommitDialog => 0,
+        AppMode::Status | AppMode::CommitDialog | AppMode::StashDialog => 0,
         AppMode::Log => 1,
-        AppMode::Branches => 2,
+        AppMode::Branches | AppMode::CreateBranchDialog => 2,
+        AppMode::StashList => 3,
+        
     };
 
     let tabs = Tabs::new(titles)
@@ -60,8 +71,8 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App){
 
 fn draw_footer(f: &mut Frame, area: Rect) {
     let help_text = match f.area().width > 120 {
-        true => "↑/↓: navigate | 1/2/3: switch tabs | enter/space: stage/unstage | c: commit | pgup/down: scroll diff view | F5: refresh | q: quit",
-        false => "↑/↓: nav | 1/2/3: tabs | F5: refresh | c: commit | pgup/down: scroll diff | q: quit",
+        true => "↑/↓: navigate | 1/2/3/4: switch tabs | enter: action | s: stash | n: new branch | c: commit | pgup/down: scroll diff view | F5: refresh | q: quit",
+        false => "↑/↓: nav | 1/2/3/4: tabs | enter: action | s: stash | n: branch | c: commit | pgup/down: scroll diff | q: quit",
     };
 
     let help = Paragraph::new(help_text)
@@ -509,4 +520,98 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage(100 - percent_x / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn draw_stash_view(f: &mut Frame, area: Rect, app: &App) {
+    let items: Vec<ListItem> = app
+        .stashes
+        .iter()
+        .enumerate()
+        .map(|(i, stash)| {
+            let style = if i == app.selected_stash {
+                Style::default().bg(Color::DarkGray).fg(Color::White)
+            } else {
+                Style::default().fg(Color::White)
+            };
+
+            ListItem::new(Line::from(vec![
+                Span::styled(stash, style),
+            ]))        
+        })  
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("stashes (enter: pop | del: drop | esc: back)"))
+        .style(Style::default().fg(Color::White));
+
+    f.render_widget(list, area);
+}
+
+fn draw_create_branch_dialog(f: &mut Frame, area: Rect, app: &App) {
+    let popup_area = centered_rect(50, 15, area);
+
+    f.render_widget(Clear, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Length(3)])
+        .split(popup_area);
+
+    let title = Paragraph::new("create new branch")
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)))
+        .style(Style::default().fg(Color::White));
+
+    f.render_widget(title, chunks[0]);
+
+    let input = Paragraph::new(app.branch_name.as_str())
+        .block(Block::default().borders(Borders::ALL).title("branch name"))
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+
+    f.render_widget(input, chunks[1]);
+
+    let help = Paragraph::new("enter: create | esc: cancel")
+        .block(Block::default().borders(Borders::ALL))
+        .style(Style::default().fg(Color::Gray));
+
+    f.render_widget(help, chunks[2]);
+
+    f.set_cursor(
+        chunks[1].x + app.branch_name.len() as u16 + 1,
+        chunks[1].y + 1,
+    );
+}
+
+fn draw_stash_dialog(f: &mut Frame, area: Rect, app: &App) {
+    let popup_area = centered_rect(60, 20, area);
+    
+    f.render_widget(Clear, popup_area);
+    
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(3), Constraint::Length(3)])
+        .split(popup_area);
+    
+    let title = Paragraph::new("stash changes")
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)))
+        .style(Style::default().fg(Color::White));
+        
+    f.render_widget(title, chunks[0]);
+    
+    let message = Paragraph::new(app.stash_message.as_str())
+        .block(Block::default().borders(Borders::ALL).title("stash message (optional)"))
+        .style(Style::default().fg(Color::White).bg(Color::Black))
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(message, chunks[1]);
+    
+    let help = Paragraph::new("enter: stash | esc: cancel")
+        .block(Block::default().borders(Borders::ALL))
+        .style(Style::default().fg(Color::Gray));
+        
+    f.render_widget(help, chunks[2]);
+    
+    f.set_cursor(
+        chunks[1].x + app.stash_message.len() as u16 + 1,
+        chunks[1].y + 1,
+    );
 }

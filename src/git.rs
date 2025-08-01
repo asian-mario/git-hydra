@@ -361,6 +361,7 @@ impl Repository {
         Ok(())
     }
 
+    // is git2 stash_foreach bugged? it doesnt seem to work at ALL
     pub fn stash_list(&mut self) -> Result<Vec<String>> {
         let mut stashes = Vec::new();
 

@@ -218,7 +218,7 @@ impl App {
                             Ok(_) => {
                                 self.mode = AppMode::Status;
                                 self.stash_message.clear();
-                                self.refresh_data();
+                                self.refresh_data()?;
                             }
                             Err(e) => {
                                 self.error_message = Some(format!("failed to stash: {}", e));
@@ -302,6 +302,20 @@ impl App {
                 self.mode = AppMode::Branches;
                 self.refresh_data()?;
             }
+            KeyCode::Char('4') => {
+                self.mode = AppMode::StashList;
+                self.refresh_data()?;
+            }
+            KeyCode::Char('s') => {
+                self.mode = AppMode::StashDialog;
+                self.stash_message.clear();
+            }
+            KeyCode::Char('n') => {
+                if self.mode == AppMode::Branches {
+                    self.mode = AppMode::CreateBranchDialog;
+                    self.branch_name.clear();
+                }
+            }
             KeyCode::Char('c') => {
                 // Open dialog if there are staged files
                 if let Some(status) = &self.status {
@@ -374,7 +388,7 @@ impl App {
                                         if let Err(e) = self.repo.unstage_file(&file_path){
                                             self.error_message = Some(format!("failed to unstage: {}", e));
                                         } else {
-                                            self.refresh_data();
+                                            self.refresh_data()?;
                                         }
                                     } else {
                                         if let Err(e) = self.repo.stage_file(&file_path){
@@ -420,7 +434,7 @@ impl App {
                                 if let Err(e) = self.repo.unstage_file(&file_path){
                                     self.error_message = Some(format!("failed to unstage: {}", e));
                                 } else {
-                                    self.refresh_data();
+                                    self.refresh_data()?;
                                 }
                             } else {
                                 if let Err(e) = self.repo.stage_file(&file_path){
@@ -475,8 +489,20 @@ impl App {
             AppMode::Branches => {
                 self.branches = self.repo.get_branches()?;
             }
+            AppMode::StashList => {
+                eprint!("DEBUG: REFRESHING STASHES...");
+                self.stashes = self.repo.stash_list()?;
+                eprint!("DEBUG: GOT {} STASHES", self.stashes.len());
+                if self.selected_stash >= self.stashes.len() {
+                    self.selected_stash = self.stashes.len().saturating_sub(1);
+                }
 
-            _ => {}
+                eprint!("DEBUG: STASHES REFRESHED, SELECTED_STASH: {}", self.selected_stash);
+
+            }
+            _ => {
+                eprintln!("DEBUG: NO REFRESH NEEDED FOR MODE: {:?}", self.mode)
+            }
 
         }
 
