@@ -460,12 +460,12 @@ impl Repository {
         let remote_branch_name = format!("refs/remotes/{}/{}", remote_name, branch_name);
         let remote_ref = self.repo.find_reference(&remote_branch_name)?;
         let remote_oid = remote_ref.target().context("failed to get remote OID")?;
-        let remote_commit = self.repo.find_commit(remote_oid)?;
+        // let remote_commit = self.repo.find_commit(remote_oid)?;
         let remote_annotated = self.repo.find_annotated_commit(remote_oid)?;
         let annotated_commits = vec![&remote_annotated];
         
         let head = self.repo.head()?;
-        let local_oid = head.target().context("failed to get local OID")?;
+        // let local_oid = head.target().context("failed to get local OID")?;
         
         let analysis = self.repo.merge_analysis(&annotated_commits)?;
         
