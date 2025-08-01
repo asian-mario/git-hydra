@@ -385,40 +385,29 @@ impl Repository {
         let mut callbacks = RemoteCallbacks::new();
 
         callbacks.credentials(|url, username_from_url, _allowed_types| {
-            // Only handle HTTPS URLs
-            if !url.starts_with("https://") {
-                return Err(git2::Error::from_str("Only HTTPS remotes are supported"));
+            if url.starts_with("git@") || url.contains("ssh://") {
+                if let Ok(cred) = Cred::ssh_key_from_agent(username_from_url.unwrap_or("git")) {
+                    return Ok(cred);
+                }
+
+                if let Ok(cred) = Cred::ssh_key(
+                    username_from_url.unwrap_or("git"),
+                    None,
+                    std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap_or_default())),
+                    None,
+                ) {
+                    return Ok(cred);
+                }
             }
 
-            // Try credential helper first (this will use git's credential manager)
             if let Ok(cred) = Cred::credential_helper(&self.repo.config()?, url, username_from_url) {
                 return Ok(cred);
             }
-
-            // Try default credentials (stored tokens, etc.)
             if let Ok(cred) = Cred::default() {
                 return Ok(cred);
             }
 
-            // Fall back to prompting for username/password
-            // Note: In a TUI app, you might want to create a custom input dialog
-            println!("Authentication required for {}", url);
-            print!("Username: ");
-            io::stdout().flush().unwrap();
-            
-            let mut username = String::new();
-            io::stdin().read_line(&mut username).unwrap();
-            let username = username.trim();
-
-            // For GitHub, password should be a Personal Access Token
-            print!("Password/Token: ");
-            io::stdout().flush().unwrap();
-            
-            let mut password = String::new();
-            io::stdin().read_line(&mut password).unwrap();
-            let password = password.trim();
-
-            Cred::userpass_plaintext(username, password)
+            Cred::userpass_plaintext(username_from_url.unwrap_or(""), "")
         });
 
         callbacks.push_transfer_progress(|current, total, bytes| {
@@ -443,40 +432,29 @@ impl Repository {
         let mut callbacks = RemoteCallbacks::new();
 
         callbacks.credentials(|url, username_from_url, _allowed_types| {
-            // Only handle HTTPS URLs
-            if !url.starts_with("https://") {
-                return Err(git2::Error::from_str("Only HTTPS remotes are supported"));
+            if url.starts_with("git@") || url.contains("ssh://") {
+                if let Ok(cred) = Cred::ssh_key_from_agent(username_from_url.unwrap_or("git")) {
+                    return Ok(cred);
+                }
+
+                if let Ok(cred) = Cred::ssh_key(
+                    username_from_url.unwrap_or("git"),
+                    None,
+                    std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap_or_default())),
+                    None,
+                ) {
+                    return Ok(cred);
+                }
             }
 
-            // Try credential helper first (this will use git's credential manager)
             if let Ok(cred) = Cred::credential_helper(&self.repo.config()?, url, username_from_url) {
                 return Ok(cred);
             }
-
-            // Try default credentials (stored tokens, etc.)
             if let Ok(cred) = Cred::default() {
                 return Ok(cred);
             }
 
-            // Fall back to prompting for username/password
-            // Note: In a TUI app, you might want to create a custom input dialog
-            println!("Authentication required for {}", url);
-            print!("Username: ");
-            io::stdout().flush().unwrap();
-            
-            let mut username = String::new();
-            io::stdin().read_line(&mut username).unwrap();
-            let username = username.trim();
-
-            // For GitHub, password should be a Personal Access Token
-            print!("Password/Token: ");
-            io::stdout().flush().unwrap();
-            
-            let mut password = String::new();
-            io::stdin().read_line(&mut password).unwrap();
-            let password = password.trim();
-
-            Cred::userpass_plaintext(username, password)
+            Cred::userpass_plaintext(username_from_url.unwrap_or(""), "")
         });
 
         callbacks.transfer_progress(|stats| {
