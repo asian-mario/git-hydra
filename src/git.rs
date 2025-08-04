@@ -42,6 +42,47 @@ pub struct RepoStatus {
     pub untracked: Vec<FileStatus>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ConflictHunk {
+    pub start_line: usize,
+    pub end_line: usize,
+    pub our_content: String,
+    pub their_content: String,
+    pub base_content: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConflictedFile {
+    pub path: String,
+    pub conflicts: Vec<ConflictHunk>
+}
+
+#[derive(Debug, Clone)] 
+pub struct MergeConflict {
+    pub files: Vec<ConflictedFile>,
+    pub our_commit: String,
+    pub their_commit: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum MergeResolution {
+    KeepOurs,
+    KeepTheirs,
+    KeepBoth,
+    Custom(String),
+}
+
+impl ConflictHunk {
+    pub fn resolve(&self, resolution: &MergeResolution) -> String {
+        match resolution {
+            MergeResolution::KeepOurs => self.our_content.clone(),
+            MergeResolution::KeepTheirs => self.their_content.clone(),
+            MergeResolution::KeepBoth => format!("{}\n{}", self.our_content, self.their_content),
+            MergeResolution::Custom(content) => content.clone(),
+        }
+    }
+}
+
 impl fmt::Display for RepoStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "branch: {}", self.branch)?;
@@ -534,5 +575,122 @@ impl Repository {
         } else {
             Ok("HEAD".to_string())
         }
+    }
+
+    pub fn detect_merge_conflicts(&self) -> Result<Option<MergeConflict>> {
+        let merge_head_path = self.repo.path().join("MERGE_HEAD");
+        if !merge_head_path.exists() {
+            return Ok(None);
+        }
+
+        let mut opts = StatusOptions::new();
+        opts.include_untracked(false);
+        let statuses = self.repo.statuses(Some(&mut opts))?;
+
+        let mut conflicted_files = Vec::new();
+
+        for entry in statuses.iter() {
+            let status = entry.status();
+            if status.is_conflicted() {
+                let path = entry.path().unwrap_or("").to_string();
+
+                if let Ok(conflicts) = self.parse_conflicted_file(&path) {
+                    if !conflicts.is_empty() {
+                        conflicted_files.push(ConflictedFile{
+                            path,
+                            conflicts
+                        });
+                    }
+                }
+            }
+        }
+
+        if conflicted_files.is_empty() {
+            return Ok(None);
+        }
+
+        let our_commit = self.repo.head()?.target()
+            .context("Failed to get HEAD")?
+            .to_string();
+        
+        Ok(Some(MergeConflict { files: conflicted_files, our_commit: our_commit, their_commit: their_commit }))
+    }
+
+    fn parse_conflicted_file(&self, file_path: &str) -> Result<Vec<ConflictHunk>> {
+        use std::fs;
+        use std::path::Path;
+
+        let repo_workdir = self.repo.workdir()
+            .context("repository has no working directory.")?;
+        let full_path = repo_workdir.join(file_path);
+
+        let content = fs::read_to_string(&full_path)
+            .context("failed to read conflicted file.")?;
+
+        let mut conflicts = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+        let mut i = 0;
+
+        while i < lines.len() {
+            if lines[i].starts_with("<<<<<<<") {
+                let start_line = i;
+                let mut our_content = String::new();
+                let mut their_content = String::new();
+                let mut base_content = None;
+
+                i += 1;
+
+                while i < lines.len() && !lines[i].starts_with("=======") && !lines[i].starts_with("|||||||") {
+                    if !our_content.is_empty() {
+                        our_content.push('\n');
+                    }
+                    our_content.push_str(lines[i]);
+                    i += 1;
+                }
+
+                if i < lines.len() && lines[i].starts_with("|||||||") {
+                    i += 1; // Skip the base marker
+                    let mut base = String::new();
+                    
+                    while i < lines.len() && !lines[i].starts_with("=======") {
+                        if !base.is_empty() {
+                            base.push('\n');
+                        }
+                        base.push_str(lines[i]);
+                        i += 1;
+                    }
+                    base_content = Some(base);
+                }
+
+                if i < lines.len() && lines[i].starts_with("======="){
+                    i += 1;
+                }
+
+                while i < lines.len() && !lines[i].starts_with(">>>>>>>") {
+                    if !their_content.is_empty() {
+                        their_content.push('\n');
+                    }
+                    their_content.push_str(lines[i]);
+                    i += 1;
+                }
+                
+                if i < lines.len() && lines[i].starts_with(">>>>>>>") {
+                    let end_line = i;
+                    i += 1;
+                    
+                    conflicts.push(ConflictHunk {
+                        start_line,
+                        end_line,
+                        our_content,
+                        their_content,
+                        base_content,
+                    });
+                }
+            } else {
+                i += 1;
+            }
+        }
+
+        Ok(conflicts)
     }
 }

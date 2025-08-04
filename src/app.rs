@@ -13,7 +13,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::git::{Repository, RepoStatus, Commit};
+use crate::git::{Commit, MergeConflict, MergeResolution, RepoStatus, Repository};
 use crate::ui;
 
 #[derive(Debug, PartialEq)]
@@ -26,6 +26,7 @@ pub enum AppMode {
     StashDialog,
     StashList,
     RemoteOperations,
+    MergeConflict,
 }
 
 pub struct App {
@@ -54,6 +55,11 @@ pub struct App {
     pub current_branch: String,
     pub is_pushing: bool,
     pub is_pulling: bool,
+
+    pub merge_conflict: Option<MergeConflict>,
+    pub selected_conflict_file: usize,
+    pub selected_conflict_hunk: usize,
+    pub conflict_resolutions: std::collections::HashMap<(usize, usize), MergeResolution>,
 }
 
 impl App {
@@ -85,6 +91,11 @@ impl App {
             current_branch: String::new(),
             is_pushing: false,
             is_pulling: false,
+
+            merge_conflict: None,
+            selected_conflict_file: 0,
+            selected_conflict_hunk: 0,
+            conflict_resolutions: std::collections::HashMap::new(),
         })
     }
 
