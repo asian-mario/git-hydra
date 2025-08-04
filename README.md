@@ -16,7 +16,7 @@ or optionally, you can install and extract via the .tar.gz
 ```
 wget https://github.com/asian-mario/git-hydra/releases/download/[VERSION]/git-hydra-linux-x86_64.tar.gz
 tar -xzf git-hydra-linux-x86_64.tar.gz
-sudo mv b-top /usr/local/bin/
+sudo mv git-hydra /usr/local/bin/
 ```
 
 ### how do i run it?
