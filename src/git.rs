@@ -454,8 +454,10 @@ impl Repository {
         });
 
         callbacks.push_transfer_progress(|current, total, bytes| {
-            print!("\rpushing... {}/{} objects ({} bytes)", current, total, bytes);
+            //print!("\rpushing... {}/{} objects ({} bytes)", current, total, bytes);
+            //io::stdout().flush().unwrap();
             io::stdout().flush().unwrap();
+            true;
         });
 
         
@@ -502,7 +504,7 @@ impl Repository {
         });
 
         callbacks.transfer_progress(|stats| {
-            if stats.received_objects() == stats.total_objects(){
+            /*if stats.received_objects() == stats.total_objects(){
                 print!("resolving deltas {}/{} \r", stats.indexed_deltas(), stats.total_deltas());
             } else if stats.total_objects() > 0 {
                 (100 * stats.received_objects() / stats.total_objects(),
@@ -511,6 +513,7 @@ impl Repository {
                 stats.received_bytes());
             }
             io::stdout().flush().unwrap();
+            true*/
             true
         });
 

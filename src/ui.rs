@@ -691,13 +691,21 @@ fn draw_remote_operations(f: &mut Frame, area: Rect, app: &App) {
         
         text.push(Line::from(""));
 
-        if app.is_pushing {
+        if let Some(push_msg) = &app.push_progress {
             text.push(Line::from(vec![
-                Span::styled("pushing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(push_msg, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            ]));
+        } else if let Some(pull_msg) = &app.pull_progress {
+            text.push(Line::from(vec![
+                Span::styled(pull_msg, Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+            ]));
+        } else if app.is_pushing {
+            text.push(Line::from(vec![
+                Span::styled("Pushing...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             ]));
         } else if app.is_pulling {
             text.push(Line::from(vec![
-                Span::styled("pulling...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("Pulling...", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
             ]));
         } else {
             text.push(Line::from(vec![

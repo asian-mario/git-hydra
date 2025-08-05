@@ -56,6 +56,8 @@ pub struct App {
     pub current_branch: String,
     pub is_pushing: bool,
     pub is_pulling: bool,
+    pub push_progress: Option<String>,
+    pub pull_progress: Option<String>,
 
     pub merge_conflict: Option<MergeConflict>,
     pub selected_conflict_file: usize,
@@ -92,6 +94,8 @@ impl App {
             current_branch: String::new(),
             is_pushing: false,
             is_pulling: false,
+            push_progress: None,
+            pull_progress: None,
 
             merge_conflict: None,
             selected_conflict_file: 0,
@@ -165,13 +169,16 @@ impl App {
         if self.selected_remote < self.remotes.len() {
             let remote_name = &self.remotes[self.selected_remote];
             self.is_pushing = true;
+            self.push_progress = Some("pushing to remote...".to_string());
 
             match self.repo.push_to_remote(remote_name, &self.current_branch) {
                 Ok(_) => {
+                        self.push_progress = Some("Push completed successfully!".to_string());
                     self.refresh_data()?;
                 }
                 Err(e) => {
                     self.error_message = Some(format!("push failed: {}", e));
+                    self.push_progress = None;
                 }
             }
             self.is_pushing = false;
@@ -183,15 +190,18 @@ impl App {
         if self.selected_remote < self.remotes.len() {
             let remote_name = &self.remotes[self.selected_remote];
             self.is_pulling = true;
+            self.pull_progress = Some("pulling from remote...".to_string());
 
             match self.repo.pull_from_remote(remote_name, &self.current_branch) {
                 Ok(_) => {
+                    self.pull_progress = Some("pull completed successfully!".to_string());
                     self.refresh_data()?;
                     if self.mode == AppMode::MergeConflict {
                         self.error_message = Some("merge conflict detected after pull, please resolve.".to_string());
                     }
                 }
                 Err(e) => {
+                    self.pull_progress = None;
                     let error_mesg = e.to_string();
                     if error_mesg.contains("merge conflicts require resolution") {
                         self.refresh_data()?;
@@ -213,6 +223,9 @@ impl App {
     fn handle_key_event(&mut self, key: KeyCode) -> Result<()> {
         // clear error message on any key press -> visual oops
         self.error_message = None;
+    
+        self.push_progress = None;
+        self.pull_progress = None;
 
         match self.mode {
             AppMode::CommitDialog => {
