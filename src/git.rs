@@ -575,7 +575,7 @@ impl Repository {
                 )?;
             }
         } else if analysis.0.is_up_to_date() {
-            println!("\nalready up to dates!");
+            println!("\nalready up to date!");
         } else {
             println!("\nno merge possible");
             return Err(anyhow::anyhow!("cannot merge - conflicting changes"));
