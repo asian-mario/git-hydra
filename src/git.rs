@@ -2,8 +2,10 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
 use git2::{Repository as Git2Repository, DiffOptions, StatusOptions, PushOptions, RemoteCallbacks, Cred, Progress};
 use std::io::{self, Write};
-use std::fmt;
+use std::{any, fmt, vec};
+use std::fs;
 use std::path::Path;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Commit {
@@ -525,8 +527,6 @@ impl Repository {
         let remote_annotated = self.repo.find_annotated_commit(remote_oid)?;
         let annotated_commits = vec![&remote_annotated];
         
-        let head = self.repo.head()?;
-        // let local_oid = head.target().context("failed to get local OID")?;
         
         let analysis = self.repo.merge_analysis(&annotated_commits)?;
         
@@ -542,9 +542,38 @@ impl Repository {
             ))?;
             println!("\nfast-forward merge completed!");
         } else if analysis.0.is_normal() {
-            // Need to do a real merge
-            println!("\nmerge required - complex operation in WIP");
-            return Err(anyhow::anyhow!("manual merge required / please use git command line"));
+            // get on your big boy seats
+            let mut merge_opts = git2::MergeOptions::new();
+            merge_opts.file_favor(git2::FileFavor::Normal);
+
+            let mut checkout_opts = git2::build::CheckoutBuilder::new();
+            checkout_opts.allow_conflicts(true);
+            checkout_opts.conflict_style_merge(true);
+
+            self.repo.merge(&annotated_commits, Some(&mut merge_opts), Some(&mut checkout_opts))?;
+            let mut index = self.repo.index()?;
+
+            if index.has_conflicts() {
+                println!("\nmerge conflicts detected! please resolve them.");
+                return Err(anyhow::anyhow!("merge conflicts require resolution!"));
+            } else {
+                let signature = self.repo.signature()?;
+                let tree_id = index.write_tree()?;
+                let tree = self.repo.find_tree(tree_id)?;
+
+                let head_commit = self.repo.head()?.peel_to_commit()?;
+                let merge_commit = self.repo.find_commit(remote_oid)?;
+                let parents = vec![&head_commit, &merge_commit];
+
+                self.repo.commit(
+                    Some("HEAD"),
+                    &signature,
+                    &signature,
+                    format!("merge branch {} of {}", branch_name, remote_name).as_str(),
+                    &tree,
+                    &parents,
+                )?;
+            }
         } else if analysis.0.is_up_to_date() {
             println!("\nalready up to date!");
         } else {
@@ -612,14 +641,15 @@ impl Repository {
         let our_commit = self.repo.head()?.target()
             .context("Failed to get HEAD")?
             .to_string();
+
+        let their_commit = fs::read_to_string(merge_head_path)?
+            .trim()
+            .to_string();
         
-        Ok(Some(MergeConflict { files: conflicted_files, our_commit: our_commit, their_commit: their_commit }))
+        Ok(Some(MergeConflict { files: conflicted_files, our_commit, their_commit }))
     }
 
     fn parse_conflicted_file(&self, file_path: &str) -> Result<Vec<ConflictHunk>> {
-        use std::fs;
-        use std::path::Path;
-
         let repo_workdir = self.repo.workdir()
             .context("repository has no working directory.")?;
         let full_path = repo_workdir.join(file_path);
@@ -692,5 +722,97 @@ impl Repository {
         }
 
         Ok(conflicts)
+    }
+
+    pub fn resolve_conflicts(&mut self, conflict_resolutions: &std::collections::HashMap<(usize, usize), MergeResolution>, merge_conflict: &MergeConflict) -> Result<()> {
+        let repo_workdir = self.repo.workdir()
+            .context("repository has no working directory.")?;
+
+        for (file_idx, conflicted_file) in merge_conflict.files.iter().enumerate() {
+            let full_path = repo_workdir.join(&conflicted_file.path);
+            let original_content = fs::read_to_string(&full_path)?;
+            let lines: Vec<&str> = original_content.lines().collect();
+
+            let mut resolved_lines = Vec::new();
+            let mut i = 0;
+            let mut hunk_idx = 0;
+
+            while i < lines.len() {
+                if lines[i].starts_with("<<<<<<<"){
+                    if let Some(resolution) = conflict_resolutions.get(&(file_idx, hunk_idx)) {
+                        if hunk_idx < conflicted_file.conflicts.len(){
+                            let hunk = &conflicted_file.conflicts[hunk_idx];
+                            let resolved_content = hunk.resolve(resolution);
+
+                            for line in resolved_content.lines() {
+                                resolved_lines.push(line.to_string());
+                            }
+                        }
+                    } else {
+                        while i <= conflicted_file.conflicts[hunk_idx].end_line && i < lines.len() {
+                            resolved_lines.push(lines[i].to_string());
+                            i += 1;
+                        }
+                        i -= 1;
+                    }
+                    while i < lines.len() && !lines[i].starts_with(">>>>>>>") {
+                        i += 1;
+                    }
+                    hunk_idx += 1;
+                } else {
+                    resolved_lines.push(lines[i].to_string());
+                }
+                i += 1;
+            }
+
+            let resolved_content = resolved_lines.join("\n");
+            fs::write(&full_path, resolved_content)?;
+
+            self.stage_file(&conflicted_file.path)?;
+        }
+        Ok(())
+    }
+
+    pub fn complete_merge(&mut self, message: &str) -> Result<()> {
+        let signature = self.repo.signature()?;
+        let mut index = self.repo.index()?;
+        let tree_id = index.write_tree()?;
+        let tree = self.repo.find_tree(tree_id)?;
+
+        let head_commit = self.repo.head()?.peel_to_commit()?;
+        
+        let merge_head_path = self.repo.path().join("MERGE_HEAD");
+        let merge_head_oid = git2::Oid::from_str(&std::fs::read_to_string(merge_head_path)?.trim())?;
+        let merge_commit = self.repo.find_commit(merge_head_oid)?;
+
+        let parents = vec![&head_commit, &merge_commit];
+
+        self.repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )?;
+
+        let git_dir = self.repo.path();
+        let _ = std::fs::remove_file(git_dir.join("MERGE_HEAD"));
+        let _ = std::fs::remove_file(git_dir.join("MERGE_MSG"));
+        let _ = std::fs::remove_file(git_dir.join("MERGE_MODE"));
+
+        Ok(())
+
+    }
+
+    pub fn abort_merge(&mut self) -> Result<()> {
+        let head_commit = self.repo.head()?.peel_to_commit()?;
+        self.repo.reset(head_commit.as_object(), git2::ResetType::Hard, None)?;
+
+        let git_dir = self.repo.path();
+        let _ = std::fs::remove_file(git_dir.join("MERGE_HEAD"));
+        let _ = std::fs::remove_file(git_dir.join("MERGE_MSG"));
+        let _ = std::fs::remove_file(git_dir.join("MERGE_MODE"));
+        Ok(())
     }
 }

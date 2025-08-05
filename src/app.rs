@@ -13,7 +13,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::git::{Commit, MergeConflict, MergeResolution, RepoStatus, Repository};
+use std::collections::HashMap;
+use crate::git::*;
 use crate::ui;
 
 #[derive(Debug, PartialEq)]
@@ -186,9 +187,22 @@ impl App {
             match self.repo.pull_from_remote(remote_name, &self.current_branch) {
                 Ok(_) => {
                     self.refresh_data()?;
+                    if self.mode == AppMode::MergeConflict {
+                        self.error_message = Some("merge conflict detected after pull, please resolve.".to_string());
+                    }
                 }
                 Err(e) => {
-                    self.error_message = Some(format!("pull failed: {}", e));
+                    let error_mesg = e.to_string();
+                    if error_mesg.contains("merge conflicts require resolution") {
+                        self.refresh_data()?;
+                        if self.mode == AppMode::MergeConflict {
+                            self.error_message = Some("merge conflict detected after pull, please resolve.".to_string());
+                        } else {
+                            self.error_message = Some(format!("pull failed: {}", e));
+                        }
+                    } else {
+                        self.error_message = Some(format!("pull failed: {}", e));
+                    }
                 }
             }
             self.is_pulling = false;
@@ -377,6 +391,107 @@ impl App {
                     _ => {}
                 }
             }
+            AppMode::MergeConflict => {
+                match key {
+                    KeyCode::Up => {
+                        if self.selected_conflict_hunk > 0 {
+                            self.selected_conflict_hunk -= 1;
+                        } else if self.selected_conflict_file > 0 {
+                            self.selected_conflict_file -= 1;
+                            if let Some(file) = self.get_current_conflict_file() {
+                                self.selected_conflict_hunk = file.conflicts.len().saturating_sub(1);
+                            }
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Down => {
+                        if let Some(file) = self.get_current_conflict_file() {
+                            if self.selected_conflict_hunk + 1 < file.conflicts.len() {
+                                self.selected_conflict_hunk += 1;
+                            } else if let Some(merge_conflict) = &self.merge_conflict {
+                                if self.selected_conflict_file + 1 < merge_conflict.files.len() {
+                                    self.selected_conflict_file += 1;
+                                    self.selected_conflict_hunk = 0;
+                                }
+
+                            }
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Right => {
+                        if let Some(merge_conflict) = &self.merge_conflict {
+                            if self.selected_conflict_file + 1 < merge_conflict.files.len() {
+                                self.selected_conflict_file += 1;
+                                self.selected_conflict_hunk = 0;
+                            }
+                        }
+                        return Ok(());
+                    }
+
+                    // resolution choices
+                    KeyCode::Char('o') => {
+                        self.set_current_resolution(MergeResolution::KeepOurs);
+                        return Ok(());
+                    }
+                    KeyCode::Char('t') => {
+                        self.set_current_resolution(MergeResolution::KeepTheirs);
+                        return Ok(());
+                    }
+                    KeyCode::Char('b') => {
+                        self.set_current_resolution(MergeResolution::KeepBoth);
+                        return Ok(());
+                    }
+                    KeyCode::Char('e') => {
+                        // TODO: edit custom res.
+                        // self.set_current_resolution(MergeResolution::Edit);
+                        return Ok(());
+                    }
+
+                    
+                    KeyCode::Char('c') => {
+                        if self.can_complete_merge() {
+                            match self.complete_merge("Merge commit") {
+                                Ok(_) =>{
+                                    self.refresh_data()?;
+                                }
+                                Err(e) => {
+                                    self.error_message = Some(format!("failed to complete merge: {}", e));
+                                }
+                            }
+                        } else {
+                            self.error_message = Some("cannot complete merge, some conflicts are unresolved.".to_string());
+                        }
+                        return Ok(());
+                    }
+
+                    KeyCode::Char('a') => {
+                        match self.abort_merge() {
+                            Ok(_) => {
+                                self.refresh_data()?;
+                            }
+                            Err(e) => {
+                                self.error_message = Some(format!("failed to abort merge: {}", e));
+                            }
+                        }
+                    }
+
+                    KeyCode::F(5) => {
+                        self.refresh_data()?;
+                        return Ok(());
+                    }
+
+                    KeyCode::Esc => {
+                        if self.merge_conflict.is_some() {
+                            self.mode = AppMode::Status;
+                        } else {
+                            self.error_message = Some("cannot exit merge mode while conflicts exist. use 'a' to abort or 'c' to complete.".to_string());
+                        }
+                        return Ok(());
+                    }
+
+                    _ => {}
+                }
+            }
             _ => {}
         }
         match key {
@@ -430,6 +545,15 @@ impl App {
                     } else {
                         self.error_message = Some("no staged files to commit.".to_string())
                     }
+                }
+            }
+            
+            KeyCode::Char('m') => {
+                if let Ok(Some(_)) = self.repo.detect_merge_conflicts() {
+                    self.mode = AppMode::MergeConflict;
+                    self.refresh_data()?;
+                } else {
+                    self.error_message = Some("no merge conflicts detected.".to_string());
                 }
             }
             KeyCode::Up => {
@@ -581,6 +705,28 @@ impl App {
     }
 
     fn refresh_data(&mut self) -> Result<()> {
+        match self.repo.detect_merge_conflicts(){
+            Ok(Some(conflict)) => {
+                self.merge_conflict = Some(conflict);
+                if self.mode != AppMode::MergeConflict {
+                    self.mode = AppMode::MergeConflict;
+                    self.selected_conflict_file = 0;
+                    self.selected_conflict_hunk = 0;
+                    self.conflict_resolutions.clear();
+                }
+                return Ok(());
+            }
+            Ok(None) => {
+                if self.mode == AppMode::MergeConflict {
+                    self.merge_conflict = None;
+                    self.conflict_resolutions.clear();
+                    self.mode = AppMode::Status;
+                }
+            }
+            Err(e) => {
+                self.error_message = Some(format!("failed to detect merge conflicts: {}", e));
+            }
+        }
         match self.mode {
             AppMode::Status => {
                 self.status = Some(self.repo.status()?);
@@ -610,6 +756,61 @@ impl App {
             }
             _ => {}
         }
+        Ok(())
+    }
+
+    pub fn get_current_conflict_file(&self) -> Option<&ConflictedFile> {
+        self.merge_conflict.as_ref()
+            .and_then(|mc | mc.files.get(self.selected_conflict_file))
+    }
+
+    pub fn get_current_conflict_hunk(&self) -> Option<&ConflictHunk> {
+        self.get_current_conflict_file()
+            .and_then(|file| file.conflicts.get(self.selected_conflict_hunk))
+    }
+
+    pub fn get_current_resolution(&self) -> Option<&MergeResolution> {
+        self.conflict_resolutions.get(&(self.selected_conflict_file, self.selected_conflict_hunk))
+    }
+
+    pub fn set_current_resolution(&mut self, resolution: MergeResolution) {
+        self.conflict_resolutions.insert((self.selected_conflict_file, self.selected_conflict_hunk), resolution);
+    }
+
+    pub fn can_complete_merge(&self) -> bool {
+        if let Some(merge_conflict) = &self.merge_conflict {
+            for (file_idx, file) in merge_conflict.files.iter().enumerate() {
+                for hunk_idx in 0 .. file.conflicts.len() {
+                    if !self.conflict_resolutions.contains_key(&(file_idx, hunk_idx)) {
+                        return false; 
+                    }
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn complete_merge(&mut self, commit_message: &str) -> Result<()> {
+        if let Some(merge_conflict) = &self.merge_conflict {
+            self.repo.resolve_conflicts(&self.conflict_resolutions, merge_conflict)?;
+            self.repo.complete_merge(commit_message)?;
+
+            self.merge_conflict = None;
+            self.conflict_resolutions.clear();
+            self.mode = AppMode::Status;
+            self.refresh_data()?;
+        }
+        Ok(())
+    }
+
+    pub fn abort_merge(&mut self) -> Result<()> {
+        self.repo.abort_merge()?;
+        self.merge_conflict = None;
+        self.conflict_resolutions.clear();
+        self.mode = AppMode::Status;
+        self.refresh_data()?;
         Ok(())
     }
 }

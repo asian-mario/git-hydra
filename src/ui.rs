@@ -1,3 +1,5 @@
+use std::vec;
+
 use ratatui::{
     backend::Backend,
     layout::{self, Constraint, Direction, Layout, Rect},
@@ -39,22 +41,24 @@ pub fn draw(f: &mut Frame, app: &App) {
             draw_stash_dialog(f, f.size(), app);
         }
         AppMode::RemoteOperations => draw_remote_view(f, chunks[1], app),
+        AppMode::MergeConflict => draw_merge_conflict_view(f, chunks[1], app),
     }
 
     if let Some(error) = &app.error_message {
         draw_error_popup(f, f.area(), error);
     }
-    draw_footer(f, chunks[2]);
+    draw_footer(f, chunks[2], app);
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App){
-    let titles = vec!["status (1)", "log (2)", "branches (3)", "stashes (4)", "remote (5)"];
+    let titles = vec!["status (1)", "log (2)", "branches (3)", "stashes (4)", "remote (5)", "MERGE (m)"];
     let selected = match app.mode {
         AppMode::Status | AppMode::CommitDialog | AppMode::StashDialog => 0,
         AppMode::Log => 1,
         AppMode::Branches | AppMode::CreateBranchDialog => 2,
         AppMode::StashList => 3,
         AppMode::RemoteOperations => 4,
+        AppMode::MergeConflict => 5,
     };
 
     let tabs = Tabs::new(titles)
@@ -63,19 +67,26 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App){
         .style(Style::default().fg(Color::White))
         .highlight_style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(if app.merge_conflict.is_some() { Color::Red } else { Color::Cyan })
                 .add_modifier(Modifier::BOLD),
         );
     
     f.render_widget(tabs, area);
 }
 
-fn draw_footer(f: &mut Frame, area: Rect) {
-    let help_text = match f.area().width > 120 {
-        true => "↑/↓: navigate | 1/2/3/4: switch tabs | enter: action | s: stash | n: new branch | c: commit | pgup/down: scroll diff view | F5: refresh | q: quit",
-        false => "↑/↓: nav | 1/2/3/4: tabs | enter: action | s: stash | n: branch | c: commit | pgup/down: scroll diff | q: quit",
+fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
+    let help_text = if app.mode == AppMode::MergeConflict {
+        match f.area().width > 100 {
+            true => "↑/↓: navigate hunks | ←/→: navigate files | o: keep ours | t: keep theirs | b: keep both | c: complete merge | a: abort | F5: refresh | q: quit",
+            false => "↑/↓: hunks | ←/→: files | o: ours | t: theirs | b: both | c: complete | a: abort | q: quit",
+        }
+    } else {
+        match f.area().width > 120 {
+            true => "↑/↓: navigate | 1/2/3/4: switch tabs | enter: action | s: stash | n: new branch | c: commit | pgup/down: scroll diff view | F5: refresh | q: quit",
+            false => "↑/↓: nav | 1/2/3/4: tabs | enter: action | s: stash | n: branch | c: commit | pgup/down: scroll diff | q: quit",
+        }
     };
-
+    
     let help = Paragraph::new(help_text)
         .block(Block::default().borders(Borders::ALL))
         .style(Style::default().fg(Color::Gray))
