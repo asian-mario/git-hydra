@@ -172,8 +172,8 @@ impl App {
             self.push_progress = Some("pushing to remote...".to_string());
 
             match self.repo.push_to_remote(remote_name, &self.current_branch) {
-                Ok(_) => {
-                        self.push_progress = Some("Push completed successfully!".to_string());
+                Ok(message) => {
+                    self.push_progress = Some(message);
                     self.refresh_data()?;
                 }
                 Err(e) => {
@@ -193,8 +193,8 @@ impl App {
             self.pull_progress = Some("pulling from remote...".to_string());
 
             match self.repo.pull_from_remote(remote_name, &self.current_branch) {
-                Ok(_) => {
-                    self.pull_progress = Some("pull completed successfully!".to_string());
+                Ok(message) => {
+                    self.pull_progress = Some(message);
                     self.refresh_data()?;
                     if self.mode == AppMode::MergeConflict {
                         self.error_message = Some("merge conflict detected after pull, please resolve.".to_string());

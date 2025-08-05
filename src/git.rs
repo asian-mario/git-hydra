@@ -422,7 +422,7 @@ impl Repository {
     }
 
     // gaahhhhh
-    pub fn push_to_remote(&mut self, remote_name: &str, branch_name: &str) -> Result<()> {
+    pub fn push_to_remote(&mut self, remote_name: &str, branch_name: &str) -> Result<String> {
         let mut remote = self.repo.find_remote(remote_name)?;
 
         let mut callbacks = RemoteCallbacks::new();
@@ -467,12 +467,12 @@ impl Repository {
         let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
         remote.push(&[&refspec], Some(&mut push_options))?;
 
-        println!("\npush completed successfully!");
+        //println!("\npush completed successfully!");
         io::stdout().flush().unwrap(); 
-        Ok(())
+        Ok("push completed successfully!".to_string())
     }
 
-    pub fn pull_from_remote(&mut self, remote_name: &str, branch_name: &str) -> Result<()> {
+    pub fn pull_from_remote(&mut self, remote_name: &str, branch_name: &str) -> Result<String> {
         let mut remote = self.repo.find_remote(remote_name)?;
 
         let mut callbacks = RemoteCallbacks::new();
@@ -550,7 +550,8 @@ impl Repository {
                     .conflict_style_merge(true)
                     .force()
             ))?;
-            println!("\nfast-forward merge completed!");
+            //println!("\nfast-forward merge completed!");
+            return Ok("Fast-forward merge completed!".to_string());
         } else if analysis.0.is_normal() {
             // get on your big boy seats
             let mut merge_opts = git2::MergeOptions::new();
@@ -564,7 +565,7 @@ impl Repository {
             let mut index = self.repo.index()?;
 
             if index.has_conflicts() {
-                println!("\nmerge conflicts detected! please resolve them.");
+                //println!("\nmerge conflicts detected! please resolve them.");
                 return Err(anyhow::anyhow!("merge conflicts require resolution!"));
             } else {
                 let signature = self.repo.signature()?;
@@ -583,16 +584,14 @@ impl Repository {
                     &tree,
                     &parents,
                 )?;
+                return Ok(format!("Merge completed: {} from {}", branch_name, remote_name));
             }
         } else if analysis.0.is_up_to_date() {
-            println!("\nalready up to date!");
+            return Ok("already up to date!".to_string());
         } else {
-            println!("\nno merge possible");
-            return Err(anyhow::anyhow!("cannot merge - conflicting changes LALALALALALA"));
+            return Err(anyhow::anyhow!("cannot merge - conflicting changes detected!"));
         }
-        io::stdout().flush().unwrap(); 
         
-        Ok(())
     }
 
     pub fn get_remotes(&self) -> Result<Vec<String>>{
