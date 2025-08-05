@@ -531,9 +531,16 @@ impl Repository {
         let analysis = self.repo.merge_analysis(&annotated_commits)?;
         
         if analysis.0.is_fast_forward() {
-            let mut reference = self.repo.find_reference("HEAD")?;
-            reference.set_target(remote_oid, "Fast-forward")?;
-            self.repo.set_head("HEAD")?;
+            let head = self.repo.head()?;
+            if let Some(branch_ref_name) = head.name() {
+                let mut branch_ref = self.repo.find_reference(branch_ref_name)?;
+                branch_ref.set_target(remote_oid, "Fast-forward")?;
+            } else {
+                let mut head_ref = self.repo.find_reference("HEAD")?;
+                head_ref.set_target(remote_oid, "Fast-forward")?;
+            }
+            
+            // Checkout the updated files
             self.repo.checkout_head(Some(
                 git2::build::CheckoutBuilder::default()
                     .allow_conflicts(true)
