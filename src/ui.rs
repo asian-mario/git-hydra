@@ -1,5 +1,6 @@
-use std::vec;
+use std::{thread::current, vec};
 
+use git2::DiffHunk;
 use ratatui::{
     backend::Backend,
     layout::{self, Constraint, Direction, Layout, Rect},
@@ -723,4 +724,238 @@ fn draw_remote_operations(f: &mut Frame, area: Rect, app: &App) {
         .wrap(Wrap { trim: true });
     
     f.render_widget(paragraph, area);
+}
+
+fn draw_merge_conflict_view(f: &mut Frame, area: Rect, app: &App) {
+    if let Some(merge_conflict) = &app.merge_conflict {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+            .split(area);
+
+        draw_conflict_file_list(f, chunks[0], app, merge_conflict);
+        draw_conflict_resolution_panel(f, chunks[1], app);
+    } else {
+        let no_conflicts = Paragraph::new("no merge conflicts detected. \n\n this mode is only available during a merge with conflicts.")
+            .block(Block::default().borders(Borders::ALL).title("merge conflict"))
+            .style(Style::default().fg(Color::Gray))
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(no_conflicts, area);
+    }
+}
+
+fn draw_conflict_file_list(f: &mut Frame, area: Rect, app: &App, merge_conflict: &crate::git::MergeConflict) {
+    let mut items = Vec::new();
+
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled("── MERGE CONFLICT ──", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+    ])));
+
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled("our commit: ", Style::default().fg(Color::Gray)),
+        Span::styled(&merge_conflict.our_commit[..8], Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+    ])));
+
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled("their commit: ", Style::default().fg(Color::Gray)),
+        Span::styled(&merge_conflict.their_commit[..8], Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+    ])));
+
+    items.push(ListItem::new(Line::from("")));
+
+    for (file_idx, file) in merge_conflict.files.iter().enumerate() {
+        let is_selected_file = file_idx == app.selected_file;
+
+        let resolved_count = file.conflicts.iter().enumerate()
+            .filter(|(hunk_idx, _)| app.conflict_resolutions.contains_key(&(file_idx, *hunk_idx)))
+            .count();
+        
+        let total_conflicts = file.conflicts.len();
+        let all_resolved = resolved_count == total_conflicts;
+
+        let file_style = if is_selected_file {
+            Style::default().bg(Color::DarkGray).fg(Color::White)
+        } else if all_resolved {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::Red)
+        };
+
+        let status_icon = if all_resolved {
+            "✓"
+        } else {
+            "✗"
+        };
+        let progress = format!("({}/{})", resolved_count, total_conflicts);
+
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(format!("{} ", status_icon),
+                if all_resolved { Style::default().fg(Color::Green) } else { Style::default().fg(Color::Red) }),
+            Span::styled(&file.path, file_style),
+            Span::styled(format!(" {}", progress), Style::default().fg(Color::Gray)),
+
+        ])));
+        
+        // im gonna rip my hair out ui design is a pain in my butt
+
+        if is_selected_file {
+            for (hunk_idx, _hunk) in file.conflicts.iter().enumerate() {
+                let is_selected_hunk = hunk_idx == app.selected_conflict_hunk;
+                let is_resolved = app.conflict_resolutions.contains_key(&(file_idx, hunk_idx));
+
+                let hunk_style = if is_selected_hunk {
+                    Style::default().bg(Color::DarkGray).fg(Color::White)
+                } else if is_resolved {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::Red)
+                };
+
+                let resolution_text = if let Some(resolution) = app.conflict_resolutions.get(&(file_idx, hunk_idx)) {
+                    match resolution {
+                        crate::git::MergeResolution::KeepOurs => "[OURS]",
+                        crate::git::MergeResolution::KeepTheirs => "[THEIRS]",
+                        crate::git::MergeResolution::KeepBoth => "[BOTH]",
+                        crate::git::MergeResolution::Custom(_) => "[CUSTOM]",
+                    }
+                } else {
+                    "[UNRESOLVED]"
+                };
+
+                items.push(ListItem::new(Line::from(vec![
+                    Span::styled("  └─ ", Style::default()),
+                    Span::styled(format!("Hunk {}{}", hunk_idx + 1, resolution_text), hunk_style),
+                ])));
+            }
+        }
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("conflicted files"))
+        .style(Style::default().fg(Color::White));
+
+    f.render_widget(list, area);
+}
+
+// someone please hop on this project and do the UI
+fn draw_conflict_resolution_panel(f: &mut Frame, area: Rect, app: &App) {
+    if let Some(current_hunk) = app.get_current_conflict_hunk(){
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Percentage(40),
+                Constraint::Percentage(40),
+                Constraint::Min(5),
+            ])
+            .split(area);
+        
+        draw_conflict_header(f, chunks[0], app);
+        draw_conflict_ours_section(f, chunks[1], current_hunk);
+        draw_conflict_theirs_section(f, chunks[2], current_hunk);
+        draw_conflict_resolution_section(f, chunks[3], app, current_hunk);
+    } else {
+        let no_hunk = Paragraph::new("select a conflict to view details")
+            .block(Block::default().borders(Borders::ALL).title("conflict resolution"))
+            .style(Style::default().fg(Color::Gray))
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(no_hunk, area);
+    }
+}
+
+fn draw_conflict_header(f: &mut Frame, area: Rect, app: &App) {
+    if let Some(file) = app.get_current_conflict_file() {
+        let current_hunk = app.selected_conflict_hunk + 1;
+        let total_hunks = file.conflicts.len();
+        
+        let header_text = format!("{} - conflict {} of {}", file.path, current_hunk, total_hunks);
+        
+        let header = Paragraph::new(header_text)
+            .block(Block::default().borders(Borders::ALL))
+            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(header, area);
+    }
+}
+
+fn draw_conflict_ours_section(f: &mut Frame, area: Rect, hunk: &crate::git::ConflictHunk) {
+    let lines: Vec<Line> = hunk.our_content
+        .lines()
+        .map(|line| Line::from(Span::styled(line, Style::default().fg(Color::Green))))
+        .collect();
+
+    let our_section = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("OURS (current branch) - press 'o' to keep"))
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(our_section, area);
+}
+
+fn draw_conflict_theirs_section(f: &mut Frame, area: Rect, hunk: &crate::git::ConflictHunk) {
+    let lines: Vec<Line> = hunk.their_content
+        .lines()
+        .map(|line| Line::from(Span::styled(line, Style::default().fg(Color::Blue))))
+        .collect();
+
+    let their_section = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("THEIRS (incoming branch) - press 't' to keep"))
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(their_section, area);
+}
+
+fn draw_conflict_resolution_section(f: &mut Frame, area: Rect, app: &App, hunk: &crate::git::ConflictHunk) {
+    let mut text = Vec::new();
+    
+    if let Some(resolution) = app.get_current_resolution() {
+        text.push(Line::from(vec![
+            Span::styled("current resolution: ", Style::default().fg(Color::Gray)),
+            match resolution {
+                crate::git::MergeResolution::KeepOurs => 
+                    Span::styled("KEEP OURS", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                crate::git::MergeResolution::KeepTheirs => 
+                    Span::styled("KEEP THEIRS", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+                crate::git::MergeResolution::KeepBoth => 
+                    Span::styled("KEEP BOTH", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                crate::git::MergeResolution::Custom(_) => 
+                    Span::styled("CUSTOM", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            }
+        ]));
+        
+        text.push(Line::from(""));
+        text.push(Line::from(vec![
+            Span::styled("Preview:", Style::default().fg(Color::Gray)),
+        ]));
+        
+        let preview = hunk.resolve(resolution);
+        for line in preview.lines().take(5) { // Show first 5 lines of preview
+            text.push(Line::from(Span::styled(line.to_string(), Style::default().fg(Color::White))));
+        }
+        
+        if preview.lines().count() > 5 {
+            text.push(Line::from(Span::styled("... (truncated)", Style::default().fg(Color::Gray))));
+        }
+    } else {
+        text.push(Line::from(vec![
+            Span::styled("UNRESOLVED", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        ]));
+        text.push(Line::from(""));
+        text.push(Line::from("Choose resolution:"));
+        text.push(Line::from("• 'o' - keep our version (green)"));
+        text.push(Line::from("• 't' - keep their version (blue)"));  
+        text.push(Line::from("• 'b' - keep both versions"));
+        text.push(Line::from("• 'e' - edit custom resolution"));
+    }
+
+    let resolution_panel = Paragraph::new(text)
+        .block(Block::default().borders(Borders::ALL).title("resolution"))
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(resolution_panel, area);
 }
