@@ -578,7 +578,7 @@ impl Repository {
             println!("\nalready up to dates!");
         } else {
             println!("\nno merge possible");
-            return Err(anyhow::anyhow!("cannot merge - conflicting changes"));
+            return Err(anyhow::anyhow!("cannot merge - conflicting changes LALALALALALA"));
         }
         io::stdout().flush().unwrap(); 
         
