@@ -620,7 +620,7 @@ impl Repository {
         }
 
         let mut opts = StatusOptions::new();
-        opts.include_untracked(false);
+        opts.include_untracked(true);
         let statuses = self.repo.statuses(Some(&mut opts))?;
 
         let mut conflicted_files = Vec::new();
