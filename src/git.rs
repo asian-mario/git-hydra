@@ -74,6 +74,13 @@ pub enum MergeResolution {
     Custom(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)] 
+pub enum ResetMode {
+    Soft,
+    Mixed,
+    Hard,
+}
+
 impl ConflictHunk {
     pub fn resolve(&self, resolution: &MergeResolution) -> String {
         match resolution {
@@ -81,6 +88,16 @@ impl ConflictHunk {
             MergeResolution::KeepTheirs => self.their_content.clone(),
             MergeResolution::KeepBoth => format!("{}\n{}", self.our_content, self.their_content),
             MergeResolution::Custom(content) => content.clone(),
+        }
+    }
+}
+
+impl fmt::Display for ResetMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ResetMode::Soft => write!(f, "soft"),
+            ResetMode::Mixed => write!(f, "mixed"),
+            ResetMode::Hard => write!(f, "hard"),
         }
     }
 }
@@ -249,6 +266,43 @@ impl Repository {
         let (ahead, behind) = self.repo.graph_ahead_behind(local_oid, upstream_oid)?;
 
         Ok((ahead, behind))
+    }
+
+    pub fn reset_to_commit(&mut self, commit_id: &str, mode: ResetMode) -> Result<()> {
+        let oid = git2::Oid::from_str(commit_id)?;
+        let commit = self.repo.find_commit(oid)?;
+        let obj = commit.as_object();
+
+        let reset_type = match mode {
+            ResetMode::Soft => git2::ResetType::Soft,
+            ResetMode::Mixed => git2::ResetType::Mixed,
+            ResetMode::Hard => git2::ResetType::Hard,
+        };
+
+        if mode == ResetMode::Hard {
+            let mut checkout_opts = git2::build::CheckoutBuilder::new();
+            checkout_opts.force();
+            self.repo.reset(obj, reset_type, Some(&mut checkout_opts))?;
+        } else {
+            self.repo.reset(obj, reset_type, None)?;
+        };
+
+        Ok(())
+    }
+
+    pub fn reset_head(&mut self, mode: ResetMode) -> Result<()> {
+        let parent_id = {
+            let head = self.repo.head()?;
+            let commit = head.peel_to_commit()?;
+
+            if let Some(parent) = commit.parents().next() {
+                parent.id().to_string()
+            } else {
+                return Err(anyhow::anyhow!("cannot reset: no parent commit found"));
+            }
+        };
+
+        self.reset_to_commit(&parent_id, mode)
     }
 
     pub fn get_branches(&self) -> Result<Vec<String>> {
