@@ -206,8 +206,8 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
         }
     } else {
         match f.area().width > 120 {
-            true => "↑/↓: navigate | 1/2/3/4: switch tabs | enter: action | s: stash | n: new branch | c: commit | pgup/down: scroll diff view | F5: refresh | q: quit",
-            false => "↑/↓: nav | 1/2/3/4: tabs | enter: action | s: stash | n: branch | c: commit | pgup/down: scroll diff | q: quit",
+            true => "↑/↓: navigate | 1/2/3/4: switch tabs | enter: action | s: stash | n: new branch | c: commit | pgup/down: scroll diff view | F5: refresh | r: reset to commit | q: quit",
+            false => "↑/↓: nav | 1/2/3/4: tabs | enter: action | s: stash | n: branch | c: commit | pgup/down: scroll diff | r: reset | q: quit",
         }
     };
     
