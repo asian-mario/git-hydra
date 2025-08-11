@@ -39,10 +39,17 @@ pub fn draw(f: &mut Frame, app: &App) {
         }
         AppMode::StashDialog => {
             draw_status_view(f, chunks[1], app);
-            draw_stash_dialog(f, f.size(), app);
+            draw_stash_dialog(f, f.area(), app);
         }
         AppMode::RemoteOperations => draw_remote_view(f, chunks[1], app),
         AppMode::MergeConflict => draw_merge_conflict_view(f, chunks[1], app),
+        AppMode::ResetDialog => {
+            match app.reset_target_commit {
+                Some(_) => draw_log_view(f, chunks[1], app),
+                None => draw_status_view(f, chunks[1], app),
+            }
+            draw_reset_dialog(f, f.area(), app);
+        }
     }
 
     if let Some(error) = &app.error_message {
@@ -54,7 +61,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 fn draw_header(f: &mut Frame, area: Rect, app: &App){
     let titles = vec!["status (1)", "log (2)", "branches (3)", "stashes (4)", "remote (5)", "MERGE (m)"];
     let selected = match app.mode {
-        AppMode::Status | AppMode::CommitDialog | AppMode::StashDialog => 0,
+        AppMode::Status | AppMode::CommitDialog | AppMode::StashDialog | AppMode::ResetDialog => 0,
         AppMode::Log => 1,
         AppMode::Branches | AppMode::CreateBranchDialog => 2,
         AppMode::StashList => 3,
@@ -73,6 +80,122 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App){
         );
     
     f.render_widget(tabs, area);
+}
+
+fn draw_reset_dialog(f: &mut Frame, area: Rect, app: &App) {
+    let popup_area = centered_rect(70, 60, area);
+
+    f.render_widget(Clear, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(4),
+            Constraint::Min(8),
+            Constraint::Length(3),
+        ])
+        .split(popup_area);
+
+    let title = Paragraph::new("Git Reset")
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Red)))
+        .style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+    f.render_widget(title, chunks[0]);
+
+    draw_reset_target_info(f, chunks[1], app);
+    draw_reset_mode_selection(f, chunks[2], app);
+
+    let help_text = if app.get_current_reset_mode() == crate::git::ResetMode::Hard {
+        "WARNING: hard reset will permanently delete changes! \nenter: execute reset | esc: cancel"
+    } else {
+        "↑/↓: select mode | enter: execute reset | esc: cancel"
+    };
+
+    let help_style = if app.get_current_reset_mode() == crate::git::ResetMode::Hard {
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+
+    let help = Paragraph::new(help_text)
+        .block(Block::default().borders(Borders::ALL))
+        .style(help_style)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(help, chunks[3]);
+}
+
+fn draw_reset_target_info(f: &mut Frame, area: Rect, app: &App) {
+    let mut text = Vec::new();
+
+    if let Some(target_commit) = &app.reset_target_commit {
+        if let Some(commit) = app.commits.iter().find(|c| c.id == *target_commit) {
+            text.push(Line::from(vec![
+                Span::styled("reset to commit: ", Style::default().fg(Color::Gray)),
+                Span::styled(&commit.id[..8], Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            ]));
+            text.push(Line::from(vec![
+                Span::styled("message: ", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    commit.message.lines().next().unwrap_or(""),
+                    Style::default().fg(Color::White)
+                ),
+            ]));
+        } else {
+            text.push(Line::from(vec![
+                Span::styled("reset to commit: ", Style::default().fg(Color::Gray)),
+                Span::styled(&target_commit[..8], Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))                
+            ]));
+        }
+    } else {
+        text.push(Line::from(vec![
+            Span::styled("reset to: ", Style::default().fg(Color::Gray)),
+            Span::styled("HEAD~1", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(" (undo last commit)", Style::default().fg(Color::Gray)),
+        ]));
+    }
+
+    let info = Paragraph::new(text)
+        .block(Block::default().borders(Borders::ALL).title("target"))
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(info, area);
+}
+
+fn draw_reset_mode_selection(f: &mut Frame, area: Rect, app: &App) {
+    let modes = crate::app::App::get_reset_modes();
+    let mut items = Vec::new();
+
+    for (i, mode_name) in modes.iter().enumerate() {
+        let is_selected = i == app.selected_reset_mode;
+
+        let (color, description) = match i {
+            0 => (Color::Green, "keep changes staged (safe)"),
+            1 => (Color::Yellow, "keep changes unstaged (safe)"),
+            2 => (Color::Red, "DISCARD ALL CHANGES (destructive)"),
+            _ => (Color::White, ""),
+        };
+
+        let style = if is_selected {
+            Style::default().bg(Color::DarkGray).fg(Color::White).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(color)
+        };
+
+        let selection_indicator = if is_selected { "► " } else { " " };
+
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(selection_indicator, Style::default().fg(Color::Cyan)),
+            Span::styled(format!("{:<6}", mode_name), style),
+            Span::styled(format!(" - {}", description), Style::default().fg(Color::Gray)),
+        ])));
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Reset Mode"))
+        .style(Style::default().fg(Color::White));
+
+    f.render_widget(list, area);
 }
 
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {

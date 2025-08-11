@@ -28,6 +28,7 @@ pub enum AppMode {
     StashList,
     RemoteOperations,
     MergeConflict,
+    ResetDialog,
 }
 
 pub struct App {
@@ -63,6 +64,10 @@ pub struct App {
     pub selected_conflict_file: usize,
     pub selected_conflict_hunk: usize,
     pub conflict_resolutions: std::collections::HashMap<(usize, usize), MergeResolution>,
+
+    pub reset_mode: ResetMode,
+    pub selected_reset_mode: usize,
+    pub reset_target_commit: Option<String>,
 }
 
 impl App {
@@ -101,6 +106,10 @@ impl App {
             selected_conflict_file: 0,
             selected_conflict_hunk: 0,
             conflict_resolutions: std::collections::HashMap::new(),
+
+            reset_mode: ResetMode::Mixed,
+            selected_reset_mode: 1,
+            reset_target_commit: None,
         })
     }
 
@@ -141,6 +150,41 @@ impl App {
                 break;
             }
         }
+        Ok(())
+    }
+
+    pub fn get_reset_modes() -> Vec<&'static str> {
+        vec!["Soft", "Mixed", "Hard"]
+    }
+    
+    pub fn get_current_reset_mode(&self) -> ResetMode {
+        match self.selected_reset_mode {
+            0 => ResetMode::Soft,
+            1 => ResetMode::Mixed,
+            2 => ResetMode::Hard,
+            _ => ResetMode::Mixed,
+        }
+    }
+
+    pub fn get_reset_description(&self) -> &'static str{
+        match self.selected_reset_mode {
+            0 => "Soft: Keep changes staged",
+            1 => "Mixed: Keep changes unstaged",
+            2 => "Hard: Discard all changes",
+            _ => "Mixed: Keep changes unstaged"
+        }
+    }
+
+    fn perform_reset(&mut self) -> Result <()> {
+        let reset_mode = self.get_current_reset_mode();
+
+        if let Some(target_commit) = &self.reset_target_commit {
+            self.repo.reset_to_commit(&target_commit, reset_mode)?;
+        } else {
+            self.repo.reset_head(reset_mode)?;
+        }
+
+        self.refresh_data()?;
         Ok(())
     }
 
@@ -505,6 +549,51 @@ impl App {
                     _ => {}
                 }
             }
+            AppMode::ResetDialog => {
+                match key {
+                    KeyCode::Esc => {
+                        self.mode = AppMode::Status;
+                        self.reset_target_commit = None;
+                        self.selected_reset_mode = 1;
+                    }
+                    KeyCode::Up => {
+                        if self.selected_reset_mode > 0 {
+                            self.selected_reset_mode -= 1;
+                        }
+                    }
+                    KeyCode::Down => {
+                        if self.selected_reset_mode + 1 < Self::get_reset_modes().len() {
+                            self.selected_reset_mode += 1;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if self.get_current_reset_mode() == ResetMode::Hard {
+                            match self.perform_reset() {
+                                Ok(_) => {
+                                    self.mode = AppMode::Status;
+                                    self.reset_target_commit = None;
+                                    self.selected_reset_mode = 1;
+                                }
+                                Err(e) => {
+                                    self.error_message = Some(format!("Reset failed: {}", e));
+                                }
+                            }
+                        } else {
+                            match self.perform_reset() {
+                                Ok(_) => {
+                                    self.mode = AppMode::Status;
+                                    self.reset_target_commit = None;
+                                    self.selected_reset_mode = 1;
+                                }
+                                Err(e) => {
+                                    self.error_message = Some(format!("Reset failed: {}", e))
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             _ => {}
         }
         match key {
@@ -528,6 +617,20 @@ impl App {
             KeyCode::Char('5') => {
                 self.mode = AppMode::RemoteOperations;
                 self.refresh_data()?;
+            }
+            KeyCode::Char('r') => {
+                if self.mode == AppMode::Log && !self.commits.is_empty() {
+                    let selected_commit = &self.commits[self.selected_commit];
+                    self.reset_target_commit = Some(selected_commit.id.clone());
+                    self.mode = AppMode::ResetDialog;
+                    self.selected_reset_mode = 1;
+                } else if self.mode == AppMode::Status {
+                    self.reset_target_commit = None;
+                    self.mode = AppMode::ResetDialog;
+                    self.selected_reset_mode = 1;
+                } else {
+                    self.error_message = Some("Reset only available from Status or Log view".to_string());
+                }
             }
             KeyCode::Char('p') => {
                 if self.mode == AppMode::RemoteOperations && !self.remotes.is_empty() {
