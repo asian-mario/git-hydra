@@ -13,6 +13,80 @@ mod git;
 mod ui;
 
 use app::App;
+fn prompt_yes_no(prompt: &str) -> bool {
+    use std::io::{self, Write};
+    print!("{} ", prompt);
+    let _ = io::stdout().flush();
+    let mut s = String::new();
+    if io::stdin().read_line(&mut s).is_ok() {
+        matches!(s.trim().to_lowercase().as_str(), "y" | "yes")
+    } else {
+        false
+    }
+}
+
+fn prompt_string(prompt: &str) -> Option<String> {
+    use std::io::{self, Write};
+    print!("{} ", prompt);
+    let _ = io::stdout().flush();
+    let mut s = String::new();
+    if io::stdin().read_line(&mut s).is_ok() {
+        let v = s.trim().to_string();
+        if v.is_empty() {
+            None
+        } else {
+            Some(v)
+        }
+    } else {
+        None
+    }
+}
+
+fn bootstrap_repo_if_missing(path: &std::path::Path) -> anyhow::Result<()> {
+    match git::Repository::open(path) {
+        Ok(_) => return Ok(()),
+        Err(e) => {
+            eprintln!("No Git repository found at '{}': {}", path.display(), e);
+
+            if !prompt_yes_no("Initialize a new git repository here? [y/N]") {
+                anyhow::bail!("A Git repository is required. Aborting.");
+            }
+            let mut repo = git::Repository::init_repo(path)?;
+
+            if prompt_yes_no("Create an initial commit adding all files? [Y/n]") {
+                repo.initial_commit_all("Initial commit")?;
+            }
+
+            println!("Remote setup options:");
+            println!("  [e] Add existing remote URL");
+            println!("  [g] Create a new remote with GitHub CLI (gh)");
+            println!("  [s] Skip");
+            if let Some(choice) = prompt_string("Choose (e/g/s):") {
+                match choice.as_str() {
+                    "e" | "E" => {
+                        if let Some(url) = prompt_string(
+                            "Enter remote URL (e.g., https://github.com/user/repo.git):",
+                        ) {
+                            repo.add_remote("origin", &url)?;
+                            println!("Remote 'origin' added.");
+                        }
+                    }
+                    "g" | "G" => {
+                        let name = prompt_string("Enter new repository name (default: current folder):");
+                        let private = prompt_yes_no("Private repo? [y/N]");
+                        repo.try_create_remote_with_gh("origin", name.as_deref(), private)?;
+                        println!("Created remote with gh and set as origin.");
+                    }
+                    _ => {
+                        println!("Skipping remote setup.");
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
 
 #[derive(Parser)]
 #[command(name = "git-hydra")]
@@ -65,6 +139,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Ui) | None => {
+            bootstrap_repo_if_missing(&repo_path)?;
             let mut app = App::new(repo_path)?;
             app.run().await?;
         }

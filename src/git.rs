@@ -878,4 +878,97 @@ impl Repository {
         let _ = std::fs::remove_file(git_dir.join("MERGE_MODE"));
         Ok(())
     }
+
+    pub fn init_repo<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let repo = Git2Repository::init(path.as_ref())
+            .with_context(|| format!("failed to init git repo at {}", path.as_ref().display()))?;
+
+        Ok(Self {repo})
+    }
+
+    pub fn add_remote(&mut self, name: &str, url: &str) -> Result<()> {
+        match self.repo.find_remote(name) {
+            Ok(_) => {
+                self.repo
+                    .remote_set_url(name, url)
+                    .with_context(|| format!("failed to set remote URL for {}", name))?;
+            }
+
+            Err(_) => {
+                self.repo
+                    .remote(name, url)
+                    .with_context(|| format!("failed to add remote {}", name))?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn has_commits(&self) -> bool {
+        self.repo.head().is_ok()
+    }
+
+    pub fn initial_commit_all(&mut self, message: &str) -> Result<()> {
+        use git2::{IndexAddOption, Signature};
+
+        let sig = self
+            .repo   
+            .signature()
+            .or_else(|_| Signature::now("You", "you@example.com"))
+            .context("failed to create git signature")?;
+        
+        let mut index = self.repo.index()?;
+        index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
+        let oid = index.write_tree()?;
+        let tree = self.repo.find_tree(oid)?;
+
+        // parents if HEAD exists if not start an initial commit
+        let parent_commit = if let Ok(head_ref) = self.repo.head() {
+            head_ref.peel_to_commit().ok()
+        } else {
+            None
+        };
+
+        let parents: Vec<&git2::Commit> = match &parent_commit {
+            Some(commit) => vec![commit],
+            None => vec![]
+        };
+
+        let head_name = if self.repo.head().is_ok() {
+            "HEAD"
+        } else {
+            "refs/heads/main"
+        };
+        let _ = self
+            .repo
+            .commit(Some(head_name), &sig, &sig, message, &tree, &parents[..]);
+
+        if head_name != "HEAD" {
+            self.repo.set_head("refs/heads/main")?;
+        }
+
+        Ok(())
+    }
+
+    pub fn try_create_remote_with_gh(
+        &mut self,
+        remote: &str,
+        repo_name: Option<&str>,
+        private: bool,
+    ) -> Result<()> {
+        use std::process::Command;
+        let name = repo_name.unwrap_or("repo");
+        let visibility = if private { "--private" } else { "--public" };
+        // gh repo create <name> --source . --remote <remote> --push --confirm --private/--public
+        let status = Command::new("gh")
+            .args([
+                "repo", "create", name, "--source", ".", "--remote", remote, "--push", "--confirm",
+                visibility,
+            ])
+            .status();
+        match status {
+            Ok(s) if s.success() => Ok(()),
+            Ok(s) => anyhow::bail!("'gh repo create' failed with status {}", s),
+            Err(e) => anyhow::bail!("gh CLI not found or failed to run: {}", e),
+        }
+    }
 }
